@@ -1,0 +1,11 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: vm-console
+spec:
+  tls:
+    termination: reencrypt
+  to:
+    kind: Service
+    name: vm-console-access
+  wildcardPolicy: None
