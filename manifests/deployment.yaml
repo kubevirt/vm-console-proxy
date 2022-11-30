@@ -25,7 +25,7 @@ spec:
             - /console
           imagePullPolicy: Always
           args: []
-          image: quay.io/akrejcir/vm-console-proxy:latest
+          image: console:latest
           name: console
           ports:
             - name: api

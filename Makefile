@@ -18,15 +18,11 @@ push-container:
 
 .PHONY: deploy
 deploy:
-	echo "Not implemented"
+	oc apply -k manifests
 
 .PHONY: undeploy
 undeploy:
-	echo "Not implemented"
-
-.PHONY: generate
-generate:
-	echo "Not implemented"
+	oc delete -k manifests
 
 .PHONY: test
 test:
