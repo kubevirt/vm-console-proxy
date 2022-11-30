@@ -1,5 +1,14 @@
 package main
 
+import (
+	"log"
+
+	"kubevirt.io/vm-console-access/pkg/console"
+)
+
 func main() {
-	panic("not implemented")
+	err := console.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
