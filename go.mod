@@ -1,4 +1,4 @@
-module kubevirt.io/vm-console-access
+module github.com/akrejcir/vm-console-proxy
 
 go 1.19
 

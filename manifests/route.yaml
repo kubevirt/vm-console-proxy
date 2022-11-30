@@ -7,5 +7,5 @@ spec:
     termination: reencrypt
   to:
     kind: Service
-    name: vm-console-access
+    name: vm-console-proxy
   wildcardPolicy: None

@@ -1,6 +1,6 @@
 
 # Image URL to use all building/pushing image targets
-IMG_REPOSITORY ?= quay.io/akrejcir/vm-console-access
+IMG_REPOSITORY ?= quay.io/akrejcir/vm-console-proxy
 IMG_TAG ?= latest
 IMG ?= ${IMG_REPOSITORY}:${IMG_TAG}
 

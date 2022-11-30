@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: vm-console-access
+  name: vm-console-proxy
   labels:
-    control-plane: vm-console-access
-    name: vm-console-access
+    control-plane: vm-console-proxy
+    name: vm-console-proxy
 spec:
   selector:
     matchLabels:
-      control-plane: vm-console-access
+      control-plane: vm-console-proxy
   replicas: 1
   template:
     metadata:
       labels:
-        control-plane: vm-console-access
-        name: vm-console-access
+        control-plane: vm-console-proxy
+        name: vm-console-proxy
     spec:
       securityContext:
         runAsNonRoot: true
@@ -25,7 +25,7 @@ spec:
             - /console
           imagePullPolicy: Always
           args: []
-          image: quay.io/akrejcir/vm-console-access:latest
+          image: quay.io/akrejcir/vm-console-proxy:latest
           name: console
           ports:
             - name: api
