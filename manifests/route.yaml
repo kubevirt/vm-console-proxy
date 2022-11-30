@@ -3,8 +3,6 @@ kind: Route
 metadata:
   name: vm-console
 spec:
-  tls:
-    termination: reencrypt
   to:
     kind: Service
     name: vm-console-proxy

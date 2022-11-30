@@ -2,11 +2,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: vm-console-proxy
-  annotations:
-    service.beta.openshift.io/serving-cert-secret-name: vm-console-proxy-cert
 spec:
   ports:
-    - port: 443
-      targetPort: 9443
+    - port: 80
+      targetPort: api
   selector:
     control-plane: vm-console-proxy
