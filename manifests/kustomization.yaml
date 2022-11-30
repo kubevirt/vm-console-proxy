@@ -5,6 +5,9 @@ resources:
   - deployment.yaml
   - route.yaml
   - service.yaml
+  - service_account.yaml
+  - role.yaml
+  - role_binding.yaml
 
 images:
   - name: console

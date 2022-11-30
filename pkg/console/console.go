@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/emicklei/go-restful/v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"kubevirt.io/client-go/kubecli"
 )
 
 const (
@@ -15,7 +17,13 @@ const (
 )
 
 func Run() error {
-	restful.Add(webService())
+	cli, err := kubecli.GetKubevirtClient()
+	if err != nil {
+		return err
+	}
+
+	s := service{kubevirtClient: cli}
+	restful.Add(s.webService())
 
 	server := &http.Server{
 		Addr: fmt.Sprintf("%s:%d", defaultAddress, defaultPort),
@@ -24,10 +32,14 @@ func Run() error {
 	return server.ListenAndServe()
 }
 
-func webService() *restful.WebService {
+type service struct {
+	kubevirtClient kubecli.KubevirtClient
+}
+
+func (s *service) webService() *restful.WebService {
 	ws := new(restful.WebService)
 	ws.Route(ws.GET(vncPath).
-		To(vncHandler).
+		To(s.vncHandler).
 		Doc("vnc connection").
 		Operation("vnc").
 		Param(ws.PathParameter("namespace", "namespace").Required(true)).
@@ -36,16 +48,15 @@ func webService() *restful.WebService {
 	return ws
 }
 
-func vncHandler(request *restful.Request, response *restful.Response) {
+func (s *service) vncHandler(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 	name := request.PathParameter("name")
 
-	// TODO -- handle error
-	_ = response.WriteAsJson(struct {
-		Name      string `json:"name"`
-		Namespace string `json:"namespace"`
-	}{
-		Name:      name,
-		Namespace: namespace,
-	})
+	vm, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
+	if err != nil {
+		_ = response.WriteError(http.StatusInternalServerError, err)
+		return
+	}
+
+	_ = response.WriteAsJson(vm)
 }

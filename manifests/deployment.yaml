@@ -16,6 +16,7 @@ spec:
         control-plane: vm-console-proxy
         name: vm-console-proxy
     spec:
+      serviceAccountName: vm-console-proxy
       securityContext:
         runAsNonRoot: true
         seccompProfile:
