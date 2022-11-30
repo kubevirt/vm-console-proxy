@@ -16,7 +16,6 @@ spec:
         control-plane: vm-console-access
         name: vm-console-access
     spec:
-      serviceAccountName: vm-console-access
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -24,32 +23,17 @@ spec:
       containers:
         - command:
             - /console
+          imagePullPolicy: Always
           args: []
-          image: vm-console-access:latest
+          image: quay.io/akrejcir/vm-console-access:latest
           name: console
-          resources:
-            requests:
-              memory: "150Mi"
-              cpu: "100m"
           ports:
             - name: api
               protocol: TCP
-              containerPort: 8443
+              containerPort: 8768
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop:
                 - "ALL"
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8081
-            initialDelaySeconds: 15
-            periodSeconds: 20
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: 8081
-            initialDelaySeconds: 5
-            periodSeconds: 10
       terminationGracePeriodSeconds: 10

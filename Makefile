@@ -1,11 +1,20 @@
 
+# Image URL to use all building/pushing image targets
+IMG_REPOSITORY ?= quay.io/akrejcir/vm-console-access
+IMG_TAG ?= latest
+IMG ?= ${IMG_REPOSITORY}:${IMG_TAG}
+
+.PHONY:build
+build:
+	go build -o bin/console main.go
+
 .PHONY: build-container
 build-container:
-	echo "Not implemented"
+	podman build -t ${IMG} .
 
 .PHONY: push-container
 push-container:
-	echo "Not implemented"
+	podman push ${IMG}
 
 .PHONY: deploy
 deploy:
