@@ -5,6 +5,8 @@ go 1.19
 require (
 	github.com/emicklei/go-restful/v3 v3.10.1
 	k8s.io/apimachinery v0.23.5
+	k8s.io/client-go v12.0.0+incompatible
+	kubevirt.io/api v0.0.0-20221013011232-17665f214e18
 	kubevirt.io/client-go v0.58.0
 )
 
@@ -47,11 +49,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 	k8s.io/api v0.23.5 // indirect
 	k8s.io/apiextensions-apiserver v0.23.5 // indirect
-	k8s.io/client-go v12.0.0+incompatible // indirect
 	k8s.io/klog/v2 v2.40.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220124234850-424119656bbf // indirect
 	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
-	kubevirt.io/api v0.0.0-20221013011232-17665f214e18 // indirect
 	kubevirt.io/containerized-data-importer-api v1.50.0 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect

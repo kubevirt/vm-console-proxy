@@ -37,4 +37,12 @@ spec:
             capabilities:
               drop:
                 - "ALL"
+          volumeMounts:
+            - name: "kubevirt-virt-handler-certs"
+              mountPath: "/etc/virt-handler/clientcertificates"
+              readOnly: true
       terminationGracePeriodSeconds: 10
+      volumes:
+        - name: "kubevirt-virt-handler-certs"
+          secret:
+            secretName: "kubevirt-virt-handler-certs"
