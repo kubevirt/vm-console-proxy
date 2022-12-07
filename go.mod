@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/emicklei/go-restful/v3 v3.10.1
+	github.com/golang-jwt/jwt/v4 v4.4.3
 	k8s.io/apimachinery v0.23.5
 	k8s.io/client-go v12.0.0+incompatible
 	kubevirt.io/api v0.0.0-20221013011232-17665f214e18

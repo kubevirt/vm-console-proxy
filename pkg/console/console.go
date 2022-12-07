@@ -7,18 +7,27 @@ import (
 	"os"
 
 	"github.com/emicklei/go-restful/v3"
+	"github.com/golang-jwt/jwt/v4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/util/cert"
 	kubevirtcore "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
+
+	"github.com/akrejcir/vm-console-proxy/pkg/token"
 )
 
 const (
-	vncPath = "/{namespace:[a-z0-9][a-z0-9\\-]*}/{name:[a-z0-9][a-z0-9\\-]*}"
+	urlPathPrefix = "/{namespace:[a-z0-9][a-z0-9\\-]*}/{name:[a-z0-9][a-z0-9\\-]*}"
 
 	defaultAddress = "0.0.0.0"
 	defaultPort    = 8768
+
+	serviceCertPath = "/tmp/vm-console-proxy-cert/tls.crt"
+	serviceKeyPath  = "/tmp/vm-console-proxy-cert/tls.key"
+
+	virtHandlerCertPath = "/etc/virt-handler/clientcertificates/tls.crt"
+	virtHandlerKeyPath  = "/etc/virt-handler/clientcertificates/tls.key"
 )
 
 func Run() error {
@@ -27,7 +36,21 @@ func Run() error {
 		return err
 	}
 
-	s := service{kubevirtClient: cli}
+	serviceCert, err := loadCertificates(serviceCertPath, serviceKeyPath)
+	if err != nil {
+		return err
+	}
+
+	tokenKey, err := token.CreateHmacKey(serviceCert.PrivateKey)
+	if err != nil {
+		return err
+	}
+
+	s := service{
+		kubevirtClient:  cli,
+		tokenSigningKey: tokenKey,
+	}
+
 	restful.Add(s.webService())
 
 	server := &http.Server{
@@ -39,11 +62,21 @@ func Run() error {
 
 type service struct {
 	kubevirtClient kubecli.KubevirtClient
+
+	// TODO: Needs to be refreshed when secret changes
+	tokenSigningKey []byte
 }
 
 func (s *service) webService() *restful.WebService {
 	ws := new(restful.WebService)
-	ws.Route(ws.GET(vncPath).
+	ws.Route(ws.GET(urlPathPrefix + "/token").
+		To(s.tokenHandler).
+		Doc("generate token").
+		Operation("token").
+		Param(ws.PathParameter("namespace", "namespace").Required(true)).
+		Param(ws.PathParameter("name", "name").Required(true)))
+
+	ws.Route(ws.GET(urlPathPrefix + "/vnc").
 		To(s.vncHandler).
 		Doc("vnc connection").
 		Operation("vnc").
@@ -51,6 +84,35 @@ func (s *service) webService() *restful.WebService {
 		Param(ws.PathParameter("name", "name").Required(true)))
 
 	return ws
+}
+
+func (s *service) tokenHandler(request *restful.Request, response *restful.Response) {
+	namespace := request.PathParameter("namespace")
+	name := request.PathParameter("name")
+
+	// TODO: test RBAC access to the /vnc endpoint of VMI
+
+	claims := &token.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			// TODO: Add expiration
+			ExpiresAt: nil,
+		},
+		Name:      name,
+		Namespace: namespace,
+		UID:       "TEST-UID",
+	}
+
+	signedToken, err := token.NewSignedToken(claims, s.tokenSigningKey)
+	if err != nil {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error signing token: %w", err))
+		return
+	}
+
+	_ = response.WriteAsJson(struct {
+		Token string `json:"token"`
+	}{
+		Token: signedToken,
+	})
 }
 
 func (s *service) vncHandler(request *restful.Request, response *restful.Response) {
@@ -76,14 +138,11 @@ func (s *service) vncHandler(request *restful.Request, response *restful.Respons
 		return
 	}
 
-	const certPath = "/etc/virt-handler/clientcertificates/tls.crt"
-	const keyPath = "/etc/virt-handler/clientcertificates/tls.key"
-
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 		ClientAuth:         tls.RequireAndVerifyClientCert,
 		GetClientCertificate: func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			return loadCertificates(certPath, keyPath)
+			return loadCertificates(virtHandlerCertPath, virtHandlerKeyPath)
 		},
 	}
 

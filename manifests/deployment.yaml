@@ -38,11 +38,17 @@ spec:
               drop:
                 - "ALL"
           volumeMounts:
+            - name: "vm-console-proxy-cert"
+              mountPath: "/tmp/vm-console-proxy-cert"
+              readOnly: true
             - name: "kubevirt-virt-handler-certs"
               mountPath: "/etc/virt-handler/clientcertificates"
               readOnly: true
       terminationGracePeriodSeconds: 10
       volumes:
+        - name: "vm-console-proxy-cert"
+          secret:
+            secretName: "vm-console-proxy-cert"
         - name: "kubevirt-virt-handler-certs"
           secret:
             secretName: "kubevirt-virt-handler-certs"
