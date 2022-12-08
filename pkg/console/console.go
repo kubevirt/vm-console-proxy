@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/emicklei/go-restful/v3"
 	"github.com/golang-jwt/jwt/v4"
@@ -92,6 +93,13 @@ func (s *service) tokenHandler(request *restful.Request, response *restful.Respo
 
 	// TODO: test RBAC access to the /vnc endpoint of VMI
 
+	// TODO: optimize by only getting metadata
+	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
+	if err != nil {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error getting VirtualMachineInstance: %w", err))
+		return
+	}
+
 	claims := &token.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			// TODO: Add expiration
@@ -99,7 +107,7 @@ func (s *service) tokenHandler(request *restful.Request, response *restful.Respo
 		},
 		Name:      name,
 		Namespace: namespace,
-		UID:       "TEST-UID",
+		UID:       string(vmi.UID),
 	}
 
 	signedToken, err := token.NewSignedToken(claims, s.tokenSigningKey)
@@ -118,6 +126,12 @@ func (s *service) tokenHandler(request *restful.Request, response *restful.Respo
 func (s *service) vncHandler(request *restful.Request, response *restful.Response) {
 	namespace := request.PathParameter("namespace")
 	name := request.PathParameter("name")
+
+	authHeader := request.HeaderParameter("Authorization")
+	if !s.authJwt(authHeader, name, namespace) {
+		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
+		return
+	}
 
 	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
 	if err != nil {
@@ -159,6 +173,36 @@ func (s *service) vncHandler(request *restful.Request, response *restful.Respons
 	}
 
 	_ = response.WriteAsJson(guestAgentInfo)
+}
+
+func (s *service) authJwt(authHeader string, vmiName, vmiNamespace string) bool {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(authHeader, prefix) {
+		return false
+	}
+
+	jwtToken := authHeader[len(prefix):]
+	claims, err := token.ParseToken(jwtToken, s.tokenSigningKey)
+	if err != nil {
+		return false
+	}
+
+	if claims.Name != vmiName || claims.Namespace != vmiNamespace {
+		return false
+	}
+
+	// TODO: Optimize by only getting metadata
+	// TODO: Optimize by not getting VMI twice
+	vmi, err := s.kubevirtClient.VirtualMachineInstance(vmiNamespace).Get(vmiName, &metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+
+	if claims.UID != string(vmi.UID) {
+		return false
+	}
+
+	return true
 }
 
 func loadCertificates(certPath, keyPath string) (*tls.Certificate, error) {
