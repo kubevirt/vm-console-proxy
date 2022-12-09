@@ -53,6 +53,11 @@ func Run() error {
 	}
 
 	restful.Add(s.webService())
+	cors := restful.CrossOriginResourceSharing{
+		AllowedHeaders: []string{"Authorization"},
+	}
+	restful.Filter(cors.Filter)
+	restful.Filter(restful.OPTIONSFilter())
 
 	server := &http.Server{
 		Addr: fmt.Sprintf("%s:%d", defaultAddress, defaultPort),
