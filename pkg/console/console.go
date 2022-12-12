@@ -1,19 +1,22 @@
 package console
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/emicklei/go-restful/v3"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/gorilla/websocket"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/util/cert"
-	kubevirtcore "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
+	"kubevirt.io/client-go/log"
 
 	"github.com/akrejcir/vm-console-proxy/pkg/token"
 )
@@ -132,8 +135,18 @@ func (s *service) vncHandler(request *restful.Request, response *restful.Respons
 	namespace := request.PathParameter("namespace")
 	name := request.PathParameter("name")
 
-	authHeader := request.HeaderParameter("Authorization")
-	if !s.authJwt(authHeader, name, namespace) {
+	subprotocols := websocket.Subprotocols(request.Request)
+
+	var authToken string
+	const authSubprotocolPrefix = "base64url.bearer.authorization.k8s.io."
+	for _, subprotocol := range subprotocols {
+		if strings.HasPrefix(subprotocol, authSubprotocolPrefix) {
+			authToken = subprotocol[len(authSubprotocolPrefix):]
+			break
+		}
+	}
+
+	if !s.authJwt(authToken, name, namespace) {
 		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
 		return
 	}
@@ -151,7 +164,7 @@ func (s *service) vncHandler(request *restful.Request, response *restful.Respons
 
 	virtHandlerConn := kubecli.NewVirtHandlerClient(s.kubevirtClient).Port(8186).ForNode(vmi.Status.NodeName)
 
-	guestInfoUri, err := virtHandlerConn.GuestInfoURI(vmi)
+	vncUri, err := virtHandlerConn.VNCURI(vmi)
 	if err != nil {
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed to get guest agent info URI: %w", err))
 		return
@@ -165,28 +178,61 @@ func (s *service) vncHandler(request *restful.Request, response *restful.Respons
 		},
 	}
 
-	data, err := virtHandlerConn.Get(guestInfoUri, tlsConfig)
+	serverConn, _, err := kubecli.Dial(vncUri, tlsConfig)
 	if err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("virthandler get request failed: %w", err))
+		return
+	}
+	if err != nil {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed dial vnc: %w", err))
 		return
 	}
 
-	guestAgentInfo := &kubevirtcore.VirtualMachineInstanceGuestAgentInfo{}
-	if err := json.Unmarshal([]byte(data), guestAgentInfo); err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed to unmarshall response: %w", err))
+	upgrader := kubecli.NewUpgrader()
+	upgrader.HandshakeTimeout = 10 * time.Second
+	clientConn, err := upgrader.Upgrade(response.ResponseWriter, request.Request, nil)
+	if err != nil {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed upgrade client connection: %w", err))
 		return
 	}
 
-	_ = response.WriteAsJson(guestAgentInfo)
+	ctx, cancel := context.WithCancel(request.Request.Context())
+	defer cancel()
+	go func() {
+		<-ctx.Done()
+		serverConn.Close()
+		clientConn.Close()
+	}()
+
+	copyResults := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(clientConn.UnderlyingConn(), serverConn.UnderlyingConn())
+		copyResults <- err
+	}()
+	go func() {
+		_, err := io.Copy(serverConn.UnderlyingConn(), clientConn.UnderlyingConn())
+		copyResults <- err
+	}()
+
+	res1 := <-copyResults
+	cancel()
+	res2 := <-copyResults
+
+	err = res1
+	if err == nil {
+		err = res2
+	}
+
+	// TODO: this error is always shown. Look into why.
+	if err != nil {
+		log.Log.Errorf("error with websocket connection: %w", err)
+	}
 }
 
-func (s *service) authJwt(authHeader string, vmiName, vmiNamespace string) bool {
-	const prefix = "Bearer "
-	if !strings.HasPrefix(authHeader, prefix) {
+func (s *service) authJwt(jwtToken string, vmiName, vmiNamespace string) bool {
+	if len(jwtToken) == 0 {
 		return false
 	}
 
-	jwtToken := authHeader[len(prefix):]
 	claims, err := token.ParseToken(jwtToken, s.tokenSigningKey)
 	if err != nil {
 		return false
