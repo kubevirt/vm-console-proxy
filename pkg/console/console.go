@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	urlPathPrefix = "/{namespace:[a-z0-9][a-z0-9\\-]*}/{name:[a-z0-9][a-z0-9\\-]*}"
+	urlPathPrefix = "api/v1alpha1/{namespace:[a-z0-9][a-z0-9\\-]*}/{name:[a-z0-9][a-z0-9\\-]*}"
 
 	defaultAddress = "0.0.0.0"
 	defaultPort    = 8768
