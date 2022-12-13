@@ -102,71 +102,15 @@ func (s *service) tokenHandler(request *restful.Request, response *restful.Respo
 	namespace := request.PathParameter("namespace")
 	name := request.PathParameter("name")
 
-	authHeader := request.HeaderParameter("Authorization")
-
-	var authToken string
-	const bearerPrefix = "Bearer "
-	if strings.HasPrefix(authHeader, bearerPrefix) {
-		authToken = authHeader[len(bearerPrefix):]
-	}
-
+	authToken := getAuthToken(request)
 	if authToken == "" {
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("authenticating token cannot be empty"))
 		return
 	}
 
-	tokenReview := &authnv1.TokenReview{
-		Spec: authnv1.TokenReviewSpec{
-			Token: authToken,
-		},
-	}
-
-	tokenReview, err := s.kubevirtClient.AuthenticationV1().TokenReviews().Create(context.TODO(), tokenReview, metav1.CreateOptions{})
+	err := s.checkVncRbac(authToken, name, namespace)
 	if err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error authenticating token: %w", err))
-		return
-	}
-	if tokenReview.Status.Error != "" {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error authenticating token: %s", tokenReview.Status.Error))
-		return
-	}
-
-	if !tokenReview.Status.Authenticated {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("token is not authenticated"))
-		return
-	}
-
-	extras := map[string]authzv1.ExtraValue{}
-	for key, value := range tokenReview.Status.User.Extra {
-		extras[key] = authzv1.ExtraValue(value)
-	}
-
-	accessReview := &authzv1.SubjectAccessReview{
-		Spec: authzv1.SubjectAccessReviewSpec{
-			ResourceAttributes:    &authzv1.ResourceAttributes{
-				Namespace:   namespace,
-				Name:        name,
-				Verb:        "get",
-				Group:       kubevirtv1.SubresourceGroupName,
-				Version:     "v1",
-				Resource:    "virtualmachineinstances",
-				Subresource: "vnc",
-			},
-			User:                  tokenReview.Status.User.Username,
-			Groups:                tokenReview.Status.User.Groups,
-			Extra:                 extras,
-			UID:                   tokenReview.Status.User.UID,
-		},
-	}
-
-	accessReview, err = s.kubevirtClient.AuthorizationV1().SubjectAccessReviews().Create(context.TODO(), accessReview, metav1.CreateOptions{})
-	if err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error checking permissions: %w", err))
-		return
-	}
-
-	if !accessReview.Status.Allowed {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("does not have permission to access virtualmachines/vnc endpoint: %s", accessReview.Status.Reason))
+		_ = response.WriteError(http.StatusInternalServerError, err)
 		return
 	}
 
@@ -204,16 +148,7 @@ func (s *service) vncHandler(request *restful.Request, response *restful.Respons
 	namespace := request.PathParameter("namespace")
 	name := request.PathParameter("name")
 
-	subprotocols := websocket.Subprotocols(request.Request)
-
-	var authToken string
-	const authSubprotocolPrefix = "base64url.bearer.authorization.k8s.io."
-	for _, subprotocol := range subprotocols {
-		if strings.HasPrefix(subprotocol, authSubprotocolPrefix) {
-			authToken = subprotocol[len(authSubprotocolPrefix):]
-			break
-		}
-	}
+	authToken := getAuthTokenWebsocket(request)
 
 	if !s.authJwt(authToken, name, namespace) {
 		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
@@ -248,9 +183,6 @@ func (s *service) vncHandler(request *restful.Request, response *restful.Respons
 	}
 
 	serverConn, _, err := kubecli.Dial(vncUri, tlsConfig)
-	if err != nil {
-		return
-	}
 	if err != nil {
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed dial vnc: %w", err))
 		return
@@ -295,6 +227,81 @@ func (s *service) vncHandler(request *restful.Request, response *restful.Respons
 	if err != nil {
 		log.Log.Errorf("error with websocket connection: %w", err)
 	}
+}
+
+func getAuthToken(request *restful.Request) string {
+	authHeader := request.HeaderParameter("Authorization")
+
+	const bearerPrefix = "Bearer "
+	if strings.HasPrefix(authHeader, bearerPrefix) {
+		return authHeader[len(bearerPrefix):]
+	}
+	return ""
+}
+
+func getAuthTokenWebsocket(request *restful.Request) string {
+	subprotocols := websocket.Subprotocols(request.Request)
+
+	const authSubprotocolPrefix = "base64url.bearer.authorization.k8s.io."
+	for _, subprotocol := range subprotocols {
+		if strings.HasPrefix(subprotocol, authSubprotocolPrefix) {
+			return subprotocol[len(authSubprotocolPrefix):]
+		}
+	}
+	return ""
+}
+
+func (s *service) checkVncRbac(rbacToken string, vmiName, vmiNamespace string) error {
+	tokenReview := &authnv1.TokenReview{
+		Spec: authnv1.TokenReviewSpec{
+			Token: rbacToken,
+		},
+	}
+
+	tokenReview, err := s.kubevirtClient.AuthenticationV1().TokenReviews().Create(context.TODO(), tokenReview, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("error authenticating token: %w", err)
+	}
+	if tokenReview.Status.Error != "" {
+		return fmt.Errorf("error authenticating token: %s", tokenReview.Status.Error)
+	}
+
+	if !tokenReview.Status.Authenticated {
+		return fmt.Errorf("token is not authenticated")
+	}
+
+	extras := map[string]authzv1.ExtraValue{}
+	for key, value := range tokenReview.Status.User.Extra {
+		extras[key] = authzv1.ExtraValue(value)
+	}
+
+	accessReview := &authzv1.SubjectAccessReview{
+		Spec: authzv1.SubjectAccessReviewSpec{
+			ResourceAttributes: &authzv1.ResourceAttributes{
+				Namespace:   vmiNamespace,
+				Name:        vmiName,
+				Verb:        "get",
+				Group:       kubevirtv1.SubresourceGroupName,
+				Version:     "v1",
+				Resource:    "virtualmachineinstances",
+				Subresource: "vnc",
+			},
+			User:   tokenReview.Status.User.Username,
+			Groups: tokenReview.Status.User.Groups,
+			Extra:  extras,
+			UID:    tokenReview.Status.User.UID,
+		},
+	}
+
+	accessReview, err = s.kubevirtClient.AuthorizationV1().SubjectAccessReviews().Create(context.TODO(), accessReview, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("error checking permissions: %w", err)
+	}
+
+	if !accessReview.Status.Allowed {
+		return fmt.Errorf("does not have permission to access virtualmachines/vnc endpoint: %s", accessReview.Status.Reason)
+	}
+	return nil
 }
 
 func (s *service) authJwt(jwtToken string, vmiName, vmiNamespace string) bool {
