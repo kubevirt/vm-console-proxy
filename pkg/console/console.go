@@ -13,8 +13,11 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/websocket"
+	authnv1 "k8s.io/api/authentication/v1"
+	authzv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/cert"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
@@ -99,7 +102,73 @@ func (s *service) tokenHandler(request *restful.Request, response *restful.Respo
 	namespace := request.PathParameter("namespace")
 	name := request.PathParameter("name")
 
-	// TODO: test RBAC access to the /vnc endpoint of VMI
+	authHeader := request.HeaderParameter("Authorization")
+
+	var authToken string
+	const bearerPrefix = "Bearer "
+	if strings.HasPrefix(authHeader, bearerPrefix) {
+		authToken = authHeader[len(bearerPrefix):]
+	}
+
+	if authToken == "" {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("authenticating token cannot be empty"))
+		return
+	}
+
+	tokenReview := &authnv1.TokenReview{
+		Spec: authnv1.TokenReviewSpec{
+			Token: authToken,
+		},
+	}
+
+	tokenReview, err := s.kubevirtClient.AuthenticationV1().TokenReviews().Create(context.TODO(), tokenReview, metav1.CreateOptions{})
+	if err != nil {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error authenticating token: %w", err))
+		return
+	}
+	if tokenReview.Status.Error != "" {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error authenticating token: %s", tokenReview.Status.Error))
+		return
+	}
+
+	if !tokenReview.Status.Authenticated {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("token is not authenticated"))
+		return
+	}
+
+	extras := map[string]authzv1.ExtraValue{}
+	for key, value := range tokenReview.Status.User.Extra {
+		extras[key] = authzv1.ExtraValue(value)
+	}
+
+	accessReview := &authzv1.SubjectAccessReview{
+		Spec: authzv1.SubjectAccessReviewSpec{
+			ResourceAttributes:    &authzv1.ResourceAttributes{
+				Namespace:   namespace,
+				Name:        name,
+				Verb:        "get",
+				Group:       kubevirtv1.SubresourceGroupName,
+				Version:     "v1",
+				Resource:    "virtualmachineinstances",
+				Subresource: "vnc",
+			},
+			User:                  tokenReview.Status.User.Username,
+			Groups:                tokenReview.Status.User.Groups,
+			Extra:                 extras,
+			UID:                   tokenReview.Status.User.UID,
+		},
+	}
+
+	accessReview, err = s.kubevirtClient.AuthorizationV1().SubjectAccessReviews().Create(context.TODO(), accessReview, metav1.CreateOptions{})
+	if err != nil {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error checking permissions: %w", err))
+		return
+	}
+
+	if !accessReview.Status.Allowed {
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("does not have permission to access virtualmachines/vnc endpoint: %s", accessReview.Status.Reason))
+		return
+	}
 
 	// TODO: optimize by only getting metadata
 	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
