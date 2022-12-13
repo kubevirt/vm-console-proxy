@@ -86,7 +86,8 @@ func (s *service) webService() *restful.WebService {
 		Doc("generate token").
 		Operation("token").
 		Param(ws.PathParameter("namespace", "namespace").Required(true)).
-		Param(ws.PathParameter("name", "name").Required(true)))
+		Param(ws.PathParameter("name", "name").Required(true))).
+		Param(ws.QueryParameter("duration", "duration"))
 
 	ws.Route(ws.GET(urlPathPrefix + "/vnc").
 		To(s.vncHandler).
@@ -121,10 +122,20 @@ func (s *service) tokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
+	duration := 10 * time.Minute
+	durationParam := request.QueryParameter("duration")
+	if durationParam != "" {
+		var err error
+		duration, err = time.ParseDuration(durationParam)
+		if err != nil {
+			_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed to parse duration: %w", err))
+			return
+		}
+	}
+
 	claims := &token.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			// TODO: Add expiration
-			ExpiresAt: nil,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
 		},
 		Name:      name,
 		Namespace: namespace,
