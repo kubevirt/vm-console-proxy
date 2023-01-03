@@ -21,6 +21,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
+	api "github.com/akrejcir/vm-console-proxy/api/v1alpha1"
 	"github.com/akrejcir/vm-console-proxy/pkg/token"
 )
 
@@ -148,9 +149,7 @@ func (s *service) tokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	_ = response.WriteAsJson(struct {
-		Token string `json:"token"`
-	}{
+	_ = response.WriteAsJson(&api.TokenResponse{
 		Token: signedToken,
 	})
 }
