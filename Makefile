@@ -4,6 +4,8 @@ IMG_REPOSITORY ?= quay.io/akrejcir/vm-console-proxy
 IMG_TAG ?= latest
 IMG ?= ${IMG_REPOSITORY}:${IMG_TAG}
 
+SRC_PATHS_TESTS = ./pkg/...
+
 .PHONY:build
 build:
 	go build -o bin/console main.go
@@ -26,4 +28,4 @@ undeploy:
 
 .PHONY: test
 test:
-	echo "Not implemented"
+	go test -v $(SRC_PATHS_TESTS)

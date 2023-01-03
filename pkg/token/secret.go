@@ -34,7 +34,9 @@ func CreateHmacKey(key crypto.PrivateKey) ([]byte, error) {
 		return nil, fmt.Errorf("error generating hash: returned length %d is less than expected %d", n, len(seedData))
 	}
 
-	signature, err := signer.Sign(rand.Reader, hasher.Sum(nil), hash)
+	// Passing crypto.Hash(0), so that hasher.Sum() is treated as message.
+	// This is important, because not all Signer implementations support hashed messages.
+	signature, err := signer.Sign(rand.Reader, hasher.Sum(nil), crypto.Hash(0))
 	if err != nil {
 		return nil, fmt.Errorf("failed signing seed string: %w", err)
 	}

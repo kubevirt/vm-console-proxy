@@ -1,6 +1,13 @@
 package token
 
 import (
-	_ "github.com/onsi/ginkgo/v2"
-	_ "github.com/onsi/gomega"
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
+
+func TestToken(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Token Suite")
+}
