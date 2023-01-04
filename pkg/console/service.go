@@ -20,6 +20,7 @@ import (
 	"kubevirt.io/client-go/log"
 
 	"github.com/akrejcir/vm-console-proxy/api/v1alpha1"
+	"github.com/akrejcir/vm-console-proxy/pkg/console/dialer"
 	"github.com/akrejcir/vm-console-proxy/pkg/token"
 )
 
@@ -29,7 +30,8 @@ const (
 )
 
 type service struct {
-	kubevirtClient kubecli.KubevirtClient
+	kubevirtClient  kubecli.KubevirtClient
+	websocketDialer dialer.Dialer
 
 	// TODO: Needs to be refreshed when secret changes
 	tokenSigningKey []byte
@@ -128,15 +130,13 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 		},
 	}
 
-	serverConn, _, err := kubecli.Dial(vncUri, tlsConfig)
+	serverConn, err := s.websocketDialer.Dial(vncUri, tlsConfig)
 	if err != nil {
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed dial vnc: %w", err))
 		return
 	}
 
-	upgrader := kubecli.NewUpgrader()
-	upgrader.HandshakeTimeout = 10 * time.Second
-	clientConn, err := upgrader.Upgrade(response.ResponseWriter, request.Request, nil)
+	clientConn, err := s.websocketDialer.Upgrade(response.ResponseWriter, request.Request)
 	if err != nil {
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed upgrade client connection: %w", err))
 		return
@@ -152,11 +152,11 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 
 	copyResults := make(chan error, 2)
 	go func() {
-		_, err := io.Copy(clientConn.UnderlyingConn(), serverConn.UnderlyingConn())
+		_, err := io.Copy(clientConn, serverConn)
 		copyResults <- err
 	}()
 	go func() {
-		_, err := io.Copy(serverConn.UnderlyingConn(), clientConn.UnderlyingConn())
+		_, err := io.Copy(serverConn, clientConn)
 		copyResults <- err
 	}()
 

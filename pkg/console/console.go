@@ -7,6 +7,7 @@ import (
 	"github.com/emicklei/go-restful/v3"
 	"kubevirt.io/client-go/kubecli"
 
+	"github.com/akrejcir/vm-console-proxy/pkg/console/dialer"
 	"github.com/akrejcir/vm-console-proxy/pkg/token"
 )
 
@@ -38,6 +39,7 @@ func Run() error {
 
 	handlers := &service{
 		kubevirtClient:  cli,
+		websocketDialer: dialer.New(),
 		tokenSigningKey: tokenKey,
 	}
 
