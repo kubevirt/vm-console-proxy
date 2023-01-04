@@ -41,6 +41,7 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 
 	authToken := getAuthToken(request)
 	if authToken == "" {
+		// TODO: Return different error codes
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("authenticating token cannot be empty"))
 		return
 	}
@@ -170,7 +171,7 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 
 	// TODO: this error is always shown. Look into why.
 	if err != nil {
-		log.Log.Errorf("error with websocket connection: %w", err)
+		log.Log.Errorf("error with websocket connection: %s", err)
 	}
 }
 
@@ -222,7 +223,7 @@ func (s *service) checkVncRbac(rbacToken string, vmiName, vmiNamespace string) e
 	}
 
 	if !accessReview.Status.Allowed {
-		return fmt.Errorf("does not have permission to access virtualmachines/vnc endpoint: %s", accessReview.Status.Reason)
+		return fmt.Errorf("does not have permission to access virtualmachineinstances/vnc endpoint: %s", accessReview.Status.Reason)
 	}
 	return nil
 }

@@ -62,8 +62,8 @@ func webService(handlers *service) *restful.WebService {
 		Doc("generate token").
 		Operation("token").
 		Param(ws.PathParameter("namespace", "namespace").Required(true)).
-		Param(ws.PathParameter("name", "name").Required(true))).
-		Param(ws.QueryParameter("duration", "duration"))
+		Param(ws.PathParameter("name", "name").Required(true)).
+		Param(ws.QueryParameter("duration", "duration")))
 
 	ws.Route(ws.GET(urlPathPrefix + "/vnc").
 		To(handlers.VncHandler).
