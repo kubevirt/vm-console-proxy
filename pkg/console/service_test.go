@@ -1,7 +1,9 @@
 package console
 
 import (
+	"crypto/tls"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,6 +27,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	api "github.com/akrejcir/vm-console-proxy/api/v1alpha1"
+	"github.com/akrejcir/vm-console-proxy/pkg/console/dialer"
 	"github.com/akrejcir/vm-console-proxy/pkg/token"
 )
 
@@ -42,6 +45,8 @@ var _ = Describe("Service tests", func() {
 		apiClient    *fake.Clientset
 		virtClient   *kubecli.MockKubevirtClient
 		vmiInterface *kubecli.MockVirtualMachineInstanceInterface
+
+		testDialer *fakeDialer
 
 		testService *service
 
@@ -64,6 +69,9 @@ var _ = Describe("Service tests", func() {
 				Namespace: testNamespace,
 				UID:       testUid,
 			},
+			Status: v1.VirtualMachineInstanceStatus{
+				Phase: v1.Running,
+			},
 		}
 
 		vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
@@ -78,8 +86,18 @@ var _ = Describe("Service tests", func() {
 
 		virtClient.EXPECT().VirtualMachineInstance(testNamespace).Return(vmiInterface).AnyTimes()
 
+		testDialer = &fakeDialer{
+			DialFunc: func(address string, tlsConfig *tls.Config) (io.ReadWriteCloser, error) {
+				panic("Dial function not defined")
+			},
+			UpgradeFunc: func(responseWriter http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error) {
+				panic("Upgrade function not defined")
+			},
+		}
+
 		testService = &service{
 			kubevirtClient:  virtClient,
+			websocketDialer: testDialer,
 			tokenSigningKey: []byte("testing-key"),
 		}
 
@@ -266,29 +284,79 @@ var _ = Describe("Service tests", func() {
 		})
 	})
 
-	// TODO: Implement these tests
-	PContext("VncHandler", func() {
+	Context("VncHandler", func() {
+		const subprotocolHeader = "Sec-Websocket-Protocol"
+
+		BeforeEach(func() {
+			claims := &token.Claims{
+				Name:      testName,
+				Namespace: testNamespace,
+				UID:       testUid,
+			}
+			validToken, err := token.NewSignedToken(claims, testService.tokenSigningKey)
+			Expect(err).ToNot(HaveOccurred())
+
+			request.Request.Header.Set(subprotocolHeader, "base64url.bearer.authorization.k8s.io."+validToken)
+		})
+
 		It("should fail if no token is provided", func() {
-			// TODO --
-			panic("TODO")
+			request.Request.Header.Del(subprotocolHeader)
+
+			testService.VncHandler(request, response)
+
+			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+			Expect(recorder.Body.String()).To(Equal("request is not authenticated"))
 		})
 
 		It("should fail if token is invalid", func() {
-			// TODO --
-			panic("TODO")
+			// Sign token with a different key to make it invalid
+			invalidToken, err := token.NewSignedToken(&token.Claims{}, []byte("different-token"))
+			Expect(err).ToNot(HaveOccurred())
+
+			request.Request.Header.Set(subprotocolHeader, "base64url.bearer.authorization.k8s.io."+invalidToken)
+
+			testService.VncHandler(request, response)
+
+			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+			Expect(recorder.Body.String()).To(Equal("request is not authenticated"))
 		})
 
 		It("should fail if VMI does not exist", func() {
-			// TODO --
-			panic("TODO")
+			testVmi = nil
+
+			testService.VncHandler(request, response)
+
+			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+			Expect(recorder.Body.String()).To(Equal("request is not authenticated"))
 		})
 
 		It("should fail if VMI is not running", func() {
-			// TODO --
-			panic("TODO")
+			testVmi.Status.Phase = v1.Succeeded
+
+			testService.VncHandler(request, response)
+
+			Expect(recorder.Code).To(Equal(http.StatusInternalServerError))
+			Expect(recorder.Body.String()).To(ContainSubstring("is not running"))
 		})
+
+		// TODO: add connection tests
 	})
 })
+
+type fakeDialer struct {
+	DialFunc    func(address string, tlsConfig *tls.Config) (io.ReadWriteCloser, error)
+	UpgradeFunc func(responseWriter http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error)
+}
+
+var _ dialer.Dialer = &fakeDialer{}
+
+func (f *fakeDialer) Dial(address string, tlsConfig *tls.Config) (io.ReadWriteCloser, error) {
+	return f.DialFunc(address, tlsConfig)
+}
+
+func (f *fakeDialer) Upgrade(responseWriter http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error) {
+	return f.UpgradeFunc(responseWriter, request)
+}
 
 func TestConsole(t *testing.T) {
 	RegisterFailHandler(Fail)
