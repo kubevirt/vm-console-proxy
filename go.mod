@@ -9,9 +9,11 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/onsi/ginkgo/v2 v2.6.1
 	github.com/onsi/gomega v1.24.2
+	golang.org/x/net v0.4.0
 	k8s.io/api v0.23.5
 	k8s.io/apimachinery v0.23.5
 	k8s.io/client-go v12.0.0+incompatible
+	k8s.io/utils v0.0.0-20211116205334-6203023598ed
 	kubevirt.io/api v0.0.0-20221013011232-17665f214e18
 	kubevirt.io/client-go v0.58.0
 )
@@ -42,7 +44,6 @@ require (
 	github.com/pborman/uuid v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/net v0.4.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f // indirect
 	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/term v0.3.0 // indirect
@@ -56,7 +57,6 @@ require (
 	k8s.io/apiextensions-apiserver v0.23.5 // indirect
 	k8s.io/klog/v2 v2.40.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220124234850-424119656bbf // indirect
-	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
 	kubevirt.io/containerized-data-importer-api v1.50.0 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect

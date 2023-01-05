@@ -30,6 +30,10 @@ undeploy:
 test:
 	go test -v $(SRC_PATHS_TESTS)
 
+.PHONY: functest
+functest:
+	go test -v -timeout 0 ./tests/...
+
 .PHONY: fmt
 fmt:
 	go fmt ./...
