@@ -7,11 +7,11 @@ IMG ?= ${IMG_REPOSITORY}:${IMG_TAG}
 SRC_PATHS_TESTS = ./pkg/...
 
 .PHONY:build
-build:
+build: fmt vet
 	go build -o bin/console main.go
 
 .PHONY: build-container
-build-container:
+build-container: fmt vet test
 	podman build -t ${IMG} .
 
 .PHONY: push-container
@@ -29,3 +29,11 @@ undeploy:
 .PHONY: test
 test:
 	go test -v $(SRC_PATHS_TESTS)
+
+.PHONY: fmt
+fmt:
+	go fmt ./...
+
+.PHONY: vet
+vet:
+	go vet ./...

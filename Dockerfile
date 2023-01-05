@@ -14,6 +14,7 @@ COPY vendor/ vendor/
 # Copy the go source
 COPY Makefile Makefile
 COPY main.go main.go
+COPY api/ api/
 COPY pkg/ pkg/
 
 # Build
