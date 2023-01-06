@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/websocket"
+	"github.com/mitchellh/go-vnc"
 	authnv1 "k8s.io/api/authentication/v1"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
@@ -21,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/client-go/kubecli"
 
 	api "github.com/akrejcir/vm-console-proxy/api/v1alpha1"
 )
@@ -324,12 +326,19 @@ var _ = Describe("Token", func() {
 
 			It("should proxy VNC connection", func() {
 				dialer := &websocket.Dialer{
-					Subprotocols: []string{subprotocolPrefix + vncToken},
+					Subprotocols: []string{subprotocolPrefix + vncToken, "base64.binary.k8s.io"},
 				}
 
 				conn, _, err := dialer.Dial(vncUrl, nil)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(conn.Close()).To(Succeed())
+
+				done := make(chan struct{})
+				streamer := kubecli.NewWebsocketStreamer(conn, done)
+				defer close(done)
+
+				vncClient, err := vnc.Client(streamer.AsConn(), &vnc.ClientConfig{})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vncClient.Close()).To(Succeed())
 			})
 
 			It("should fail if token is expired", func() {
