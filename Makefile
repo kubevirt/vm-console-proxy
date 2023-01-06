@@ -32,7 +32,7 @@ test:
 
 .PHONY: functest
 functest:
-	go test -v -timeout 0 ./tests/...
+	go test -v -timeout 0 -count 1 ./tests/...
 
 .PHONY: fmt
 fmt:
