@@ -114,14 +114,6 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 		return
 	}
 
-	virtHandlerConn := kubecli.NewVirtHandlerClient(s.kubevirtClient).Port(8186).ForNode(vmi.Status.NodeName)
-
-	vncUri, err := virtHandlerConn.VNCURI(vmi)
-	if err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed to get guest agent info URI: %w", err))
-		return
-	}
-
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 		ClientAuth:         tls.RequireAndVerifyClientCert,
@@ -130,7 +122,7 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 		},
 	}
 
-	serverConn, err := s.websocketDialer.Dial(vncUri, tlsConfig)
+	serverConn, err := s.websocketDialer.DialVirtHandler(s.kubevirtClient, vmi, tlsConfig)
 	if err != nil {
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed dial vnc: %w", err))
 		return

@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"time"
 
+	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 )
 
 type Dialer interface {
-	Dial(address string, tlsConfig *tls.Config) (io.ReadWriteCloser, error)
+	DialVirtHandler(kubevirtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, tlsConfig *tls.Config) (io.ReadWriteCloser, error)
 	Upgrade(responseWriter http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error)
 }
 
@@ -20,8 +21,15 @@ func New() Dialer {
 
 type dialer struct{}
 
-func (d *dialer) Dial(address string, tlsConfig *tls.Config) (io.ReadWriteCloser, error) {
-	result, _, err := kubecli.Dial(address, tlsConfig)
+func (d *dialer) DialVirtHandler(kubevirtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, tlsConfig *tls.Config) (io.ReadWriteCloser, error) {
+	virtHandlerConn := kubecli.NewVirtHandlerClient(kubevirtClient).Port(8186).ForNode(vmi.Status.NodeName)
+
+	vncUri, err := virtHandlerConn.VNCURI(vmi)
+	if err != nil {
+		return nil, err
+	}
+
+	result, _, err := kubecli.Dial(vncUri, tlsConfig)
 	if err != nil {
 		return nil, err
 	}

@@ -87,10 +87,10 @@ var _ = Describe("Service tests", func() {
 		virtClient.EXPECT().VirtualMachineInstance(testNamespace).Return(vmiInterface).AnyTimes()
 
 		testDialer = &fakeDialer{
-			DialFunc: func(address string, tlsConfig *tls.Config) (io.ReadWriteCloser, error) {
-				panic("Dial function not defined")
+			DialVirtHandlerFunc: func(_ kubecli.KubevirtClient, _ *v1.VirtualMachineInstance, _ *tls.Config) (io.ReadWriteCloser, error) {
+				panic("DialVirtHandler function not implemented")
 			},
-			UpgradeFunc: func(responseWriter http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error) {
+			UpgradeFunc: func(_ http.ResponseWriter, _ *http.Request) (io.ReadWriteCloser, error) {
 				panic("Upgrade function not defined")
 			},
 		}
@@ -339,23 +339,91 @@ var _ = Describe("Service tests", func() {
 			Expect(recorder.Body.String()).To(ContainSubstring("is not running"))
 		})
 
-		// TODO: add connection tests
+		It("should proxy connection", func() {
+			serverTestSide, serverHandlerSide := newDuplexPipe()
+			testDialer.DialVirtHandlerFunc = func(_ kubecli.KubevirtClient, _ *v1.VirtualMachineInstance, _ *tls.Config) (io.ReadWriteCloser, error) {
+				return serverHandlerSide, nil
+			}
+
+			clientTestSide, clientHandlerSide := newDuplexPipe()
+			testDialer.UpgradeFunc = func(_ http.ResponseWriter, _ *http.Request) (io.ReadWriteCloser, error) {
+				return clientHandlerSide, nil
+			}
+
+			handlerFinished := make(chan struct{})
+			go func() {
+				defer GinkgoRecover()
+				defer close(handlerFinished)
+				testService.VncHandler(request, response)
+			}()
+
+			const messageFromClient = "message-from-client"
+			_, err := io.WriteString(clientTestSide, messageFromClient)
+			Expect(err).ToNot(HaveOccurred())
+
+			readBuff := make([]byte, len([]byte(messageFromClient)))
+			_, err = io.ReadFull(serverTestSide, readBuff)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(readBuff)).To(Equal(messageFromClient))
+
+			const messageFromServer = "message-from-server"
+			_, err = io.WriteString(serverTestSide, messageFromServer)
+			Expect(err).ToNot(HaveOccurred())
+
+			readBuff = make([]byte, len([]byte(messageFromServer)))
+			_, err = io.ReadFull(clientTestSide, readBuff)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(readBuff)).To(Equal(messageFromServer))
+
+			Expect(clientTestSide.Close()).To(Succeed())
+			Expect(serverTestSide.Close()).To(Succeed())
+
+			Eventually(handlerFinished, time.Second).Should(BeClosed())
+		})
 	})
 })
 
 type fakeDialer struct {
-	DialFunc    func(address string, tlsConfig *tls.Config) (io.ReadWriteCloser, error)
-	UpgradeFunc func(responseWriter http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error)
+	DialVirtHandlerFunc func(kubevirtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, tlsConfig *tls.Config) (io.ReadWriteCloser, error)
+	UpgradeFunc         func(responseWriter http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error)
 }
 
 var _ dialer.Dialer = &fakeDialer{}
 
-func (f *fakeDialer) Dial(address string, tlsConfig *tls.Config) (io.ReadWriteCloser, error) {
-	return f.DialFunc(address, tlsConfig)
+func (f *fakeDialer) DialVirtHandler(kubevirtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, tlsConfig *tls.Config) (io.ReadWriteCloser, error) {
+	return f.DialVirtHandlerFunc(kubevirtClient, vmi, tlsConfig)
 }
 
 func (f *fakeDialer) Upgrade(responseWriter http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error) {
 	return f.UpgradeFunc(responseWriter, request)
+}
+
+type duplexPipe struct {
+	reader *io.PipeReader
+	writer *io.PipeWriter
+}
+
+var _ io.ReadWriteCloser = &duplexPipe{}
+
+func (d *duplexPipe) Read(p []byte) (n int, err error) {
+	return d.reader.Read(p)
+}
+
+func (d *duplexPipe) Write(p []byte) (n int, err error) {
+	return d.writer.Write(p)
+}
+
+func (d *duplexPipe) Close() error {
+	return d.writer.Close()
+}
+
+func newDuplexPipe() (*duplexPipe, *duplexPipe) {
+	r1, w1 := io.Pipe()
+	r2, w2 := io.Pipe()
+
+	pipe1 := &duplexPipe{reader: r1, writer: w2}
+	pipe2 := &duplexPipe{reader: r2, writer: w1}
+	return pipe1, pipe2
 }
 
 func TestConsole(t *testing.T) {
