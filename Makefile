@@ -41,3 +41,11 @@ fmt:
 .PHONY: vet
 vet:
 	go vet ./...
+
+.PHONY: example-client
+example-client:
+	test -s "example-client/noVNC-1.3.0" || curl -L https://github.com/novnc/noVNC/archive/refs/tags/v1.3.0.tar.gz | tar -xz -C "example-client"
+
+.PHONY: serve-client
+serve-client: example-client
+	cd "example-client" && python3 -m http.server
