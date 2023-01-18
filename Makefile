@@ -18,12 +18,16 @@ build-container: fmt vet test
 push-container:
 	podman push ${IMG}
 
+.PHONY: manifests
+manifests:
+	cd manifests && IMG_REPOSITORY=${IMG_REPOSITORY} IMG_TAG=${IMG_TAG} envsubst < kustomization.yaml.in > kustomization.yaml
+
 .PHONY: deploy
-deploy:
+deploy: manifests
 	oc apply -k manifests
 
 .PHONY: undeploy
-undeploy:
+undeploy: manifests
 	oc delete -k manifests
 
 .PHONY: test

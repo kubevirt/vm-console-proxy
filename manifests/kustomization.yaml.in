@@ -13,5 +13,5 @@ resources:
 
 images:
   - name: console
-    newName: quay.io/akrejcir/vm-console-proxy
-    newTag: latest
+    newName: ${IMG_REPOSITORY}
+    newTag: ${IMG_TAG}
