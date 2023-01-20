@@ -326,8 +326,8 @@ var _ = Describe("Service tests", func() {
 
 			testService.VncHandler(request, response)
 
-			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-			Expect(recorder.Body.String()).To(Equal("request is not authenticated"))
+			Expect(recorder.Code).To(Equal(http.StatusNotFound))
+			Expect(recorder.Body.String()).To(ContainSubstring("VirtualMachineInstance does no exist"))
 		})
 
 		It("should fail if VMI is not running", func() {

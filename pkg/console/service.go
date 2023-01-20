@@ -101,12 +101,23 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 	name := request.PathParameter("name")
 
 	authToken := getAuthTokenWebsocket(request)
-
-	if !s.authJwt(authToken, name, namespace) {
+	if len(authToken) == 0 {
 		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
 		return
 	}
 
+	claims, err := token.ParseToken(authToken, s.tokenSigningKey)
+	if err != nil {
+		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
+		return
+	}
+
+	if claims.Name != name || claims.Namespace != namespace {
+		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
+		return
+	}
+
+	// TODO: Optimize by only getting metadata
 	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -114,6 +125,11 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 			return
 		}
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error getting VirtualMachineInstance: %w", err))
+		return
+	}
+
+	if claims.UID != string(vmi.UID) {
+		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
 		return
 	}
 
@@ -226,34 +242,6 @@ func (s *service) checkVncRbac(rbacToken string, vmiName, vmiNamespace string) e
 		return fmt.Errorf("does not have permission to access virtualmachineinstances/vnc endpoint: %s", accessReview.Status.Reason)
 	}
 	return nil
-}
-
-func (s *service) authJwt(jwtToken string, vmiName, vmiNamespace string) bool {
-	if len(jwtToken) == 0 {
-		return false
-	}
-
-	claims, err := token.ParseToken(jwtToken, s.tokenSigningKey)
-	if err != nil {
-		return false
-	}
-
-	if claims.Name != vmiName || claims.Namespace != vmiNamespace {
-		return false
-	}
-
-	// TODO: Optimize by only getting metadata
-	// TODO: Optimize by not getting VMI twice
-	vmi, err := s.kubevirtClient.VirtualMachineInstance(vmiNamespace).Get(vmiName, &metav1.GetOptions{})
-	if err != nil {
-		return false
-	}
-
-	if claims.UID != string(vmi.UID) {
-		return false
-	}
-
-	return true
 }
 
 func getAuthToken(request *restful.Request) string {

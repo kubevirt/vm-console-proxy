@@ -320,8 +320,8 @@ var _ = Describe("Token", func() {
 				}
 				Expect(err).To(MatchError(websocket.ErrBadHandshake))
 
-				Expect(response.StatusCode).To(Equal(http.StatusUnauthorized))
-				Expect(io.ReadAll(response.Body)).To(ContainSubstring("request is not authenticated"))
+				Expect(response.StatusCode).To(Equal(http.StatusNotFound))
+				Expect(io.ReadAll(response.Body)).To(ContainSubstring("VirtualMachineInstance does no exist"))
 			})
 
 			It("should proxy VNC connection", func() {
