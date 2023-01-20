@@ -16,6 +16,7 @@ import (
 	authzv1 "k8s.io/api/authorization/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/metadata"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
@@ -32,6 +33,7 @@ const (
 
 type service struct {
 	kubevirtClient  kubecli.KubevirtClient
+	metadataClient  metadata.Interface
 	websocketDialer dialer.Dialer
 
 	// TODO: Needs to be refreshed when secret changes
@@ -54,8 +56,8 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	// TODO: optimize by only getting metadata
-	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
+	vmiMeta, err := s.metadataClient.Resource(kubevirtv1.GroupVersion.WithResource("virtualmachineinstances")).
+		Namespace(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachineInstance does no exist: %w", err))
@@ -82,7 +84,7 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		},
 		Name:      name,
 		Namespace: namespace,
-		UID:       string(vmi.UID),
+		UID:       string(vmiMeta.UID),
 	}
 
 	signedToken, err := token.NewSignedToken(claims, s.tokenSigningKey)
@@ -117,7 +119,6 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 		return
 	}
 
-	// TODO: Optimize by only getting metadata
 	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {

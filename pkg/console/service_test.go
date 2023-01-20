@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	fakemeta "k8s.io/client-go/metadata/fake"
 	k8stesting "k8s.io/client-go/testing"
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -42,9 +43,10 @@ var _ = Describe("Service tests", func() {
 	var (
 		testVmi *v1.VirtualMachineInstance
 
-		apiClient    *fake.Clientset
-		virtClient   *kubecli.MockKubevirtClient
-		vmiInterface *kubecli.MockVirtualMachineInstanceInterface
+		apiClient      *fake.Clientset
+		metadataClient *fakemeta.FakeMetadataClient
+		virtClient     *kubecli.MockKubevirtClient
+		vmiInterface   *kubecli.MockVirtualMachineInstanceInterface
 
 		testDialer *fakeDialer
 
@@ -56,7 +58,11 @@ var _ = Describe("Service tests", func() {
 	)
 
 	BeforeEach(func() {
+		scheme := runtime.NewScheme()
+		Expect(fake.AddToScheme(scheme)).To(Succeed())
+
 		apiClient = fake.NewSimpleClientset()
+		metadataClient = fakemeta.NewSimpleMetadataClient(scheme)
 
 		ctrl := gomock.NewController(GinkgoT())
 		virtClient = kubecli.NewMockKubevirtClient(ctrl)
@@ -73,6 +79,26 @@ var _ = Describe("Service tests", func() {
 				Phase: v1.Running,
 			},
 		}
+
+		metadataClient.Fake.PrependReactor("get", "virtualmachineinstances", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			if testVmi == nil {
+				return false, nil, nil
+			}
+
+			getAction := action.(k8stesting.GetAction)
+			if getAction.GetNamespace() != testNamespace || getAction.GetName() != testName {
+				return false, nil, nil
+			}
+
+			partialMeta := &metav1.PartialObjectMetadata{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "VirtualMachineInstance",
+				},
+				ObjectMeta: testVmi.ObjectMeta,
+			}
+			return true, partialMeta, nil
+		})
 
 		vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
 		vmiInterface.EXPECT().Get(testName, gomock.Any()).DoAndReturn(
@@ -97,6 +123,7 @@ var _ = Describe("Service tests", func() {
 
 		testService = &service{
 			kubevirtClient:  virtClient,
+			metadataClient:  metadataClient,
 			websocketDialer: testDialer,
 			tokenSigningKey: []byte("testing-key"),
 		}

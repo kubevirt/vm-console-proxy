@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/emicklei/go-restful/v3"
+	"k8s.io/client-go/metadata"
 	"kubevirt.io/client-go/kubecli"
 
 	"github.com/akrejcir/vm-console-proxy/pkg/console/dialer"
@@ -27,6 +28,12 @@ func Run() error {
 		return err
 	}
 
+	metadataClient, err := metadata.NewForConfig(cli.Config())
+	if err != nil {
+		return err
+
+	}
+
 	serviceCert, err := LoadCertificates(serviceCertPath, serviceKeyPath)
 	if err != nil {
 		return err
@@ -39,6 +46,7 @@ func Run() error {
 
 	handlers := &service{
 		kubevirtClient:  cli,
+		metadataClient:  metadataClient,
 		websocketDialer: dialer.New(),
 		tokenSigningKey: tokenKey,
 	}
