@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	authnv1 "k8s.io/api/authentication/v1"
 	authzv1 "k8s.io/api/authorization/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -43,20 +44,23 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 
 	authToken := getAuthToken(request)
 	if authToken == "" {
-		// TODO: Return different error codes
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("authenticating token cannot be empty"))
+		_ = response.WriteError(http.StatusUnauthorized, fmt.Errorf("authenticating token cannot be empty"))
 		return
 	}
 
 	err := s.checkVncRbac(authToken, name, namespace)
 	if err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, err)
+		_ = response.WriteError(http.StatusUnauthorized, err)
 		return
 	}
 
 	// TODO: optimize by only getting metadata
 	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
 	if err != nil {
+		if errors.IsNotFound(err) {
+			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachineInstance does no exist: %w", err))
+			return
+		}
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error getting VirtualMachineInstance: %w", err))
 		return
 	}
@@ -67,7 +71,7 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		var err error
 		duration, err = time.ParseDuration(durationParam)
 		if err != nil {
-			_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed to parse duration: %w", err))
+			_ = response.WriteError(http.StatusBadRequest, fmt.Errorf("failed to parse duration: %w", err))
 			return
 		}
 	}
@@ -105,12 +109,16 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 
 	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
 	if err != nil {
+		if errors.IsNotFound(err) {
+			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachineInstance does no exist: %w", err))
+			return
+		}
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error getting VirtualMachineInstance: %w", err))
 		return
 	}
 
 	if !vmi.IsRunning() {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("vmi %s/%s is not running", vmi.Namespace, vmi.Name))
+		_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VMI %s/%s is not running", vmi.Namespace, vmi.Name))
 		return
 	}
 

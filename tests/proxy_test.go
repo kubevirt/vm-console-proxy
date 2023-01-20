@@ -127,7 +127,7 @@ var _ = Describe("Token", func() {
 		It("should fail if not authenticated", func() {
 			code, body, err := httpGet(tokenUrl, "")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(code).To(Equal(http.StatusInternalServerError))
+			Expect(code).To(Equal(http.StatusUnauthorized))
 			Expect(string(body)).To(ContainSubstring("authenticating token cannot be empty"))
 		})
 
@@ -137,15 +137,15 @@ var _ = Describe("Token", func() {
 
 			code, body, err := httpGet(tokenUrl, saToken)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(code).To(Equal(http.StatusInternalServerError))
+			Expect(code).To(Equal(http.StatusUnauthorized))
 			Expect(string(body)).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
 		})
 
 		It("should fail if VMI does not exist", func() {
 			code, body, err := httpGet(tokenUrl, saToken)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(code).To(Equal(http.StatusInternalServerError))
-			Expect(string(body)).To(ContainSubstring("error getting VirtualMachineInstance"))
+			Expect(code).To(Equal(http.StatusNotFound))
+			Expect(string(body)).To(ContainSubstring("VirtualMachineInstance does no exist"))
 		})
 
 		Context("with running VM", func() {

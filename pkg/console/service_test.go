@@ -143,7 +143,7 @@ var _ = Describe("Service tests", func() {
 
 			testService.TokenHandler(request, response)
 
-			Expect(recorder.Code).To(Equal(http.StatusInternalServerError))
+			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
 			Expect(recorder.Body.String()).To(Equal("authenticating token cannot be empty"))
 		})
 
@@ -152,7 +152,7 @@ var _ = Describe("Service tests", func() {
 
 			testService.TokenHandler(request, response)
 
-			Expect(recorder.Code).To(Equal(http.StatusInternalServerError))
+			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
 			Expect(recorder.Body.String()).To(Equal("authenticating token cannot be empty"))
 		})
 
@@ -166,7 +166,7 @@ var _ = Describe("Service tests", func() {
 
 			testService.TokenHandler(request, response)
 
-			Expect(recorder.Code).To(Equal(http.StatusInternalServerError))
+			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
 			Expect(recorder.Body.String()).To(Equal("token is not authenticated"))
 		})
 
@@ -180,7 +180,7 @@ var _ = Describe("Service tests", func() {
 
 			testService.TokenHandler(request, response)
 
-			Expect(recorder.Code).To(Equal(http.StatusInternalServerError))
+			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
 			Expect(recorder.Body.String()).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
 		})
 
@@ -226,8 +226,8 @@ var _ = Describe("Service tests", func() {
 
 			testService.TokenHandler(request, response)
 
-			Expect(recorder.Code).To(Equal(http.StatusInternalServerError))
-			Expect(recorder.Body.String()).To(ContainSubstring("error getting VirtualMachineInstance"))
+			Expect(recorder.Code).To(Equal(http.StatusNotFound))
+			Expect(recorder.Body.String()).To(ContainSubstring("VirtualMachineInstance does no exist"))
 		})
 
 		It("should return token", func() {
@@ -254,7 +254,7 @@ var _ = Describe("Service tests", func() {
 
 			testService.TokenHandler(request, response)
 
-			Expect(recorder.Code).To(Equal(http.StatusInternalServerError))
+			Expect(recorder.Code).To(Equal(http.StatusBadRequest))
 			Expect(recorder.Body.String()).To(ContainSubstring("failed to parse duration"))
 		})
 
@@ -335,7 +335,7 @@ var _ = Describe("Service tests", func() {
 
 			testService.VncHandler(request, response)
 
-			Expect(recorder.Code).To(Equal(http.StatusInternalServerError))
+			Expect(recorder.Code).To(Equal(http.StatusNotFound))
 			Expect(recorder.Body.String()).To(ContainSubstring("is not running"))
 		})
 
