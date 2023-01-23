@@ -4,12 +4,11 @@ kind: Kustomization
 namespace: kubevirt
 
 resources:
-  - deployment.yaml
-  - route.yaml
-  - service.yaml
   - service_account.yaml
   - role.yaml
   - role_binding.yaml
+  - service.yaml
+  - deployment.yaml
 
 images:
   - name: console

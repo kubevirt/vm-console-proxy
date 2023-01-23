@@ -3,7 +3,9 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/pointer"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -29,21 +32,59 @@ import (
 
 var _ = Describe("Token", func() {
 	const (
-		urlBase     = "vm-console-kubevirt.apps-crc.testing/api/v1alpha1/"
-		httpUrlBase = "http://" + urlBase
+		testHostname = "vm-console.test"
+		urlBase      = testHostname + "/api/v1alpha1/"
+		httpUrlBase  = "http://" + urlBase
 
-		vmiName = "vm-cirros"
+		apiPort = 8768
 
+		vmiName       = "vm-cirros"
 		tokenEndpoint = "token"
 	)
 
 	var (
+		portForwardDial func(ctx context.Context, network, addr string) (net.Conn, error)
+		httpClient      *http.Client
+
 		serviceAccount *core.ServiceAccount
 		roleBinding    *rbac.RoleBinding
 		saToken        string
 	)
 
 	BeforeEach(func() {
+		portForwardDial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			defer GinkgoRecover()
+			// The port-forwarding only supports TCP
+			if network != "tcp" {
+				return nil, fmt.Errorf("only TCP connections are supported, got: %s", network)
+			}
+			// This address is used to specify port-forwarding connection
+			if addr != testHostname+":80" {
+				return nil, fmt.Errorf("invalid address: %s", addr)
+			}
+
+			// TODO -- namespace should be configurable
+			podList, err := ApiClient.CoreV1().Pods("kubevirt").List(context.TODO(), metav1.ListOptions{
+				LabelSelector: labels.Set{"vm-console-proxy.kubevirt.io": "vm-console-proxy"}.AsSelector().String(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			if len(podList.Items) == 0 {
+				return nil, fmt.Errorf("no pods found")
+			}
+
+			return PortForwarder.Connect(&(podList.Items[0]), apiPort)
+		}
+
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.MaxConnsPerHost = 1
+		transport.MaxIdleConnsPerHost = 1
+		transport.DialContext = portForwardDial
+		httpClient = &http.Client{
+			Transport: transport,
+		}
+
 		serviceAccount = &core.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "test-service-account-",
@@ -125,7 +166,7 @@ var _ = Describe("Token", func() {
 		})
 
 		It("should fail if not authenticated", func() {
-			code, body, err := httpGet(tokenUrl, "")
+			code, body, err := httpGet(tokenUrl, "", httpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
 			Expect(string(body)).To(ContainSubstring("authenticating token cannot be empty"))
@@ -135,14 +176,14 @@ var _ = Describe("Token", func() {
 			err := ApiClient.RbacV1().RoleBindings(roleBinding.Namespace).Delete(context.TODO(), roleBinding.Name, metav1.DeleteOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
-			code, body, err := httpGet(tokenUrl, saToken)
+			code, body, err := httpGet(tokenUrl, saToken, httpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
 			Expect(string(body)).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
 		})
 
 		It("should fail if VMI does not exist", func() {
-			code, body, err := httpGet(tokenUrl, saToken)
+			code, body, err := httpGet(tokenUrl, saToken, httpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusNotFound))
 			Expect(string(body)).To(ContainSubstring("VirtualMachineInstance does no exist"))
@@ -172,7 +213,7 @@ var _ = Describe("Token", func() {
 			})
 
 			It("should get token with default duration", func() {
-				code, body, err := httpGet(tokenUrl, saToken)
+				code, body, err := httpGet(tokenUrl, saToken, httpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
 
@@ -185,7 +226,7 @@ var _ = Describe("Token", func() {
 				tokenUrl, err := url.JoinPath(httpUrlBase, testNamespace, vmiName, tokenEndpoint)
 				Expect(err).ToNot(HaveOccurred())
 
-				code, body, err := httpGet(tokenUrl+"?duration=24h", saToken)
+				code, body, err := httpGet(tokenUrl+"?duration=24h", saToken, httpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
 
@@ -217,16 +258,20 @@ var _ = Describe("Token", func() {
 
 		var (
 			vncUrl string
+			dialer *websocket.Dialer
 		)
 
 		BeforeEach(func() {
 			var err error
 			vncUrl, err = url.JoinPath(wssUrlBase, testNamespace, vmiName, vncEndpoint)
 			Expect(err).ToNot(HaveOccurred())
+
+			dialer = &websocket.Dialer{
+				NetDialContext: portForwardDial,
+			}
 		})
 
 		It("should fail if no token is provided", func() {
-			dialer := &websocket.Dialer{}
 			conn, response, err := dialer.Dial(vncUrl, nil)
 			if conn != nil {
 				_ = conn.Close()
@@ -239,10 +284,6 @@ var _ = Describe("Token", func() {
 		})
 
 		It("should fail if token is invalid", func() {
-			dialer := &websocket.Dialer{
-				Subprotocols: []string{subprotocolPrefix + "invalid-token"},
-			}
-
 			conn, response, err := dialer.Dial(vncUrl, nil)
 			if conn != nil {
 				_ = conn.Close()
@@ -286,7 +327,7 @@ var _ = Describe("Token", func() {
 				tokenUrl, err := url.JoinPath(httpUrlBase, testNamespace, vmiName, tokenEndpoint)
 				Expect(err).ToNot(HaveOccurred())
 
-				code, body, err := httpGet(tokenUrl, saToken)
+				code, body, err := httpGet(tokenUrl, saToken, httpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
 
@@ -309,9 +350,7 @@ var _ = Describe("Token", func() {
 				}, time.Minute, time.Second).Should(BeTrue())
 
 				// Try to access the VNC
-				dialer := &websocket.Dialer{
-					Subprotocols: []string{subprotocolPrefix + vncToken},
-				}
+				dialer.Subprotocols = []string{subprotocolPrefix + vncToken}
 
 				conn, response, err := dialer.Dial(vncUrl, nil)
 				if conn != nil {
@@ -325,9 +364,7 @@ var _ = Describe("Token", func() {
 			})
 
 			It("should proxy VNC connection", func() {
-				dialer := &websocket.Dialer{
-					Subprotocols: []string{subprotocolPrefix + vncToken, "base64.binary.k8s.io"},
-				}
+				dialer.Subprotocols = []string{subprotocolPrefix + vncToken, "base64.binary.k8s.io"}
 
 				conn, _, err := dialer.Dial(vncUrl, nil)
 				Expect(err).ToNot(HaveOccurred())
@@ -346,7 +383,7 @@ var _ = Describe("Token", func() {
 				tokenUrl, err := url.JoinPath(httpUrlBase, testNamespace, vmiName, tokenEndpoint)
 				Expect(err).ToNot(HaveOccurred())
 
-				code, tokenBody, err := httpGet(tokenUrl+"?duration=1s", saToken)
+				code, tokenBody, err := httpGet(tokenUrl+"?duration=1s", saToken, httpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
 
@@ -359,9 +396,7 @@ var _ = Describe("Token", func() {
 				// Wait until the token expires
 				time.Sleep(2 * time.Second)
 
-				dialer := &websocket.Dialer{
-					Subprotocols: []string{subprotocolPrefix + vncTokenWithTimeout},
-				}
+				dialer.Subprotocols = []string{subprotocolPrefix + vncTokenWithTimeout}
 
 				conn, response, err := dialer.Dial(vncUrl, nil)
 				if conn != nil {
@@ -377,7 +412,7 @@ var _ = Describe("Token", func() {
 	})
 })
 
-func httpGet(url string, authToken string) (int, []byte, error) {
+func httpGet(url string, authToken string, client *http.Client) (int, []byte, error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return 0, nil, err
@@ -387,7 +422,7 @@ func httpGet(url string, authToken string) (int, []byte, error) {
 		request.Header.Set("Authorization", "Bearer "+authToken)
 	}
 
-	response, err := http.DefaultClient.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return 0, nil, err
 	}

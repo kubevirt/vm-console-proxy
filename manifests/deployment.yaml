@@ -3,17 +3,17 @@ kind: Deployment
 metadata:
   name: vm-console-proxy
   labels:
-    control-plane: vm-console-proxy
+    vm-console-proxy.kubevirt.io: vm-console-proxy
     name: vm-console-proxy
 spec:
   selector:
     matchLabels:
-      control-plane: vm-console-proxy
+      vm-console-proxy.kubevirt.io: vm-console-proxy
   replicas: 1
   template:
     metadata:
       labels:
-        control-plane: vm-console-proxy
+        vm-console-proxy.kubevirt.io: vm-console-proxy
         name: vm-console-proxy
     spec:
       serviceAccountName: vm-console-proxy

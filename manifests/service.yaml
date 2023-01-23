@@ -9,4 +9,4 @@ spec:
     - port: 80
       targetPort: api
   selector:
-    control-plane: vm-console-proxy
+    vm-console-proxy.kubevirt.io: vm-console-proxy

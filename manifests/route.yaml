@@ -1,9 +1,0 @@
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: vm-console
-spec:
-  to:
-    kind: Service
-    name: vm-console-proxy
-  wildcardPolicy: None
