@@ -62,7 +62,7 @@ func Run() error {
 		Addr: fmt.Sprintf("%s:%d", defaultAddress, defaultPort),
 	}
 
-	return server.ListenAndServe()
+	return server.ListenAndServeTLS(serviceCertPath, serviceKeyPath)
 }
 
 func webService(handlers *service) *restful.WebService {
