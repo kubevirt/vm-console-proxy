@@ -27,9 +27,9 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	api "github.com/akrejcir/vm-console-proxy/api/v1alpha1"
-	"github.com/akrejcir/vm-console-proxy/pkg/console/dialer"
-	"github.com/akrejcir/vm-console-proxy/pkg/token"
+	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
+	"github.com/kubevirt/vm-console-proxy/pkg/token"
 )
 
 var _ = Describe("Service tests", func() {

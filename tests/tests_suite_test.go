@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"kubevirt.io/client-go/kubecli"
 
-	port_forwarder "github.com/akrejcir/vm-console-proxy/tests/port-forwarder"
+	port_forwarder "github.com/kubevirt/vm-console-proxy/tests/port-forwarder"
 )
 
 const (

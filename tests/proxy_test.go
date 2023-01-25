@@ -27,7 +27,7 @@ import (
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	api "github.com/akrejcir/vm-console-proxy/api/v1alpha1"
+	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
 )
 
 var _ = Describe("Token", func() {

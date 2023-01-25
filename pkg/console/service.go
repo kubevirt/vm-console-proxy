@@ -21,9 +21,9 @@ import (
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
-	"github.com/akrejcir/vm-console-proxy/api/v1alpha1"
-	"github.com/akrejcir/vm-console-proxy/pkg/console/dialer"
-	"github.com/akrejcir/vm-console-proxy/pkg/token"
+	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
+	"github.com/kubevirt/vm-console-proxy/pkg/token"
 )
 
 const (
