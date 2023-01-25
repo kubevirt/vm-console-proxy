@@ -9,6 +9,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/tlsconfig"
 	"github.com/kubevirt/vm-console-proxy/pkg/token"
 )
 
@@ -34,7 +35,7 @@ func Run() error {
 
 	}
 
-	serviceCert, err := LoadCertificates(serviceCertPath, serviceKeyPath)
+	serviceCert, err := tlsconfig.LoadCertificates(serviceCertPath, serviceKeyPath)
 	if err != nil {
 		return err
 	}
@@ -58,8 +59,14 @@ func Run() error {
 	restful.Filter(cors.Filter)
 	restful.Filter(restful.OPTIONSFilter())
 
+	tlsConfig, err := tlsconfig.Create()
+	if err != nil {
+		return fmt.Errorf("error creating tls.Config: %w", err)
+	}
+
 	server := &http.Server{
-		Addr: fmt.Sprintf("%s:%d", defaultAddress, defaultPort),
+		Addr:      fmt.Sprintf("%s:%d", defaultAddress, defaultPort),
+		TLSConfig: tlsConfig,
 	}
 
 	return server.ListenAndServeTLS(serviceCertPath, serviceKeyPath)

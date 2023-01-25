@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: kubevirt
 
 resources:
+  - config_map.yaml
   - service_account.yaml
   - role.yaml
   - role_binding.yaml

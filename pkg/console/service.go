@@ -23,6 +23,7 @@ import (
 
 	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/tlsconfig"
 	"github.com/kubevirt/vm-console-proxy/pkg/token"
 )
 
@@ -143,7 +144,7 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 		InsecureSkipVerify: true,
 		ClientAuth:         tls.RequireAndVerifyClientCert,
 		GetClientCertificate: func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			return LoadCertificates(virtHandlerCertPath, virtHandlerKeyPath)
+			return tlsconfig.LoadCertificates(virtHandlerCertPath, virtHandlerKeyPath)
 		},
 	}
 
