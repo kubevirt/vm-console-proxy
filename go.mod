@@ -1,4 +1,4 @@
-module github.com/akrejcir/vm-console-proxy
+module github.com/kubevirt/vm-console-proxy
 
 go 1.19
 

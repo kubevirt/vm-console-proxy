@@ -8,8 +8,8 @@ import (
 	"k8s.io/client-go/metadata"
 	"kubevirt.io/client-go/kubecli"
 
-	"github.com/akrejcir/vm-console-proxy/pkg/console/dialer"
-	"github.com/akrejcir/vm-console-proxy/pkg/token"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
+	"github.com/kubevirt/vm-console-proxy/pkg/token"
 )
 
 const (
