@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/pointer"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -36,8 +35,6 @@ var _ = Describe("Token", func() {
 		testHostname = "vm-console.test"
 		urlBase      = testHostname + "/api/v1alpha1/"
 		httpsUrlBase = "https://" + urlBase
-
-		apiPort = 8768
 
 		vmiName       = "vm-cirros"
 		tokenEndpoint = "token"
@@ -64,18 +61,7 @@ var _ = Describe("Token", func() {
 				return nil, fmt.Errorf("invalid address: %s", addr)
 			}
 
-			// TODO -- namespace should be configurable
-			podList, err := ApiClient.CoreV1().Pods("kubevirt").List(context.TODO(), metav1.ListOptions{
-				LabelSelector: labels.Set{"vm-console-proxy.kubevirt.io": "vm-console-proxy"}.AsSelector().String(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			if len(podList.Items) == 0 {
-				return nil, fmt.Errorf("no pods found")
-			}
-
-			return PortForwarder.Connect(&(podList.Items[0]), apiPort)
+			return GetApiConnection()
 		}
 
 		transport := http.DefaultTransport.(*http.Transport).Clone()

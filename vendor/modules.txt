@@ -12,6 +12,9 @@ github.com/emicklei/go-restful/v3/log
 # github.com/evanphx/json-patch v4.12.0+incompatible
 ## explicit
 github.com/evanphx/json-patch
+# github.com/fsnotify/fsnotify v1.5.4
+## explicit; go 1.16
+github.com/fsnotify/fsnotify
 # github.com/go-kit/kit v0.9.0
 ## explicit
 github.com/go-kit/kit/log
@@ -332,6 +335,7 @@ k8s.io/apimachinery/pkg/util/managedfields
 k8s.io/apimachinery/pkg/util/mergepatch
 k8s.io/apimachinery/pkg/util/naming
 k8s.io/apimachinery/pkg/util/net
+k8s.io/apimachinery/pkg/util/rand
 k8s.io/apimachinery/pkg/util/runtime
 k8s.io/apimachinery/pkg/util/sets
 k8s.io/apimachinery/pkg/util/strategicpatch

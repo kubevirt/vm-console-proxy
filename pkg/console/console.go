@@ -1,12 +1,15 @@
 package console
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
+	"path/filepath"
 
 	"github.com/emicklei/go-restful/v3"
 	"k8s.io/client-go/metadata"
 	"kubevirt.io/client-go/kubecli"
+	"kubevirt.io/client-go/log"
 
 	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/tlsconfig"
@@ -21,6 +24,9 @@ const (
 
 	serviceCertPath = "/tmp/vm-console-proxy-cert/tls.crt"
 	serviceKeyPath  = "/tmp/vm-console-proxy-cert/tls.key"
+
+	configDir      = "/config"
+	TlsProfileFile = "tls-profile-v1alpha1.yaml"
 )
 
 func Run() error {
@@ -34,6 +40,16 @@ func Run() error {
 		return err
 
 	}
+
+	tlsConfigWatch := tlsconfig.NewWatch(filepath.Join(configDir, TlsProfileFile))
+	tlsConfigWatch.Reload()
+
+	watchDone := make(chan struct{})
+	defer close(watchDone)
+	go func() {
+		err := tlsConfigWatch.Run(watchDone)
+		log.Log.Errorf("Error running TLS config watch: %s", err)
+	}()
 
 	serviceCert, err := tlsconfig.LoadCertificates(serviceCertPath, serviceKeyPath)
 	if err != nil {
@@ -59,17 +75,27 @@ func Run() error {
 	restful.Filter(cors.Filter)
 	restful.Filter(restful.OPTIONSFilter())
 
-	tlsConfig, err := tlsconfig.Create()
-	if err != nil {
-		return fmt.Errorf("error creating tls.Config: %w", err)
-	}
-
 	server := &http.Server{
-		Addr:      fmt.Sprintf("%s:%d", defaultAddress, defaultPort),
-		TLSConfig: tlsConfig,
+		Addr: fmt.Sprintf("%s:%d", defaultAddress, defaultPort),
+		TLSConfig: &tls.Config{
+			GetConfigForClient: func(_ *tls.ClientHelloInfo) (*tls.Config, error) {
+				config, err := tlsConfigWatch.GetConfig()
+				if err != nil {
+					return nil, err
+				}
+				config.Certificates = []tls.Certificate{*serviceCert}
+				return config, nil
+			},
+			GetCertificate: func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				// This function is not called, but it needs to be non-nil, otherwise
+				// the server tries to load certificate from filenames passed to
+				// ListenAndServe().
+				panic("function should not be called")
+			},
+		},
 	}
 
-	return server.ListenAndServeTLS(serviceCertPath, serviceKeyPath)
+	return server.ListenAndServeTLS("", "")
 }
 
 func webService(handlers *service) *restful.WebService {
