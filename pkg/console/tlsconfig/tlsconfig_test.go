@@ -12,14 +12,21 @@ import (
 	. "github.com/onsi/gomega"
 
 	ocpconfigv1 "github.com/openshift/api/config/v1"
+	"k8s.io/client-go/util/cert"
 	"sigs.k8s.io/yaml"
 
 	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
 )
 
 var _ = Describe("TlsConfig", func() {
+	const (
+		certHostName = "unittest.test"
+	)
+
 	var (
 		tlsConfigPath string
+		certPath      string
+		keyPath       string
 
 		configWatch Watch
 	)
@@ -49,9 +56,14 @@ var _ = Describe("TlsConfig", func() {
 		tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 		Expect(err).ToNot(HaveOccurred())
 
-		tlsConfigPath = createTempFile("vm-console-proxy-tls-config-*.yaml", tlsProfileYaml)
+		certBytes, keyBytes, err := cert.GenerateSelfSignedCertKey(certHostName, nil, nil)
+		Expect(err).ToNot(HaveOccurred())
 
-		configWatch = NewWatch(tlsConfigPath)
+		tlsConfigPath = createTempFile("vm-console-proxy-tls-config-*.yaml", tlsProfileYaml)
+		certPath = createTempFile("vm-console-proxy-cert-*.crt", certBytes)
+		keyPath = createTempFile("vm-console-proxy-key-*.key", keyBytes)
+
+		configWatch = NewWatch(tlsConfigPath, certPath, keyPath)
 	})
 
 	It("should fail if config was not loaded", func() {
@@ -85,6 +97,16 @@ var _ = Describe("TlsConfig", func() {
 
 		Expect(config.CipherSuites).To(BeEmpty())
 		Expect(config.MinVersion).To(BeZero())
+	})
+
+	It("should load certificate from file", func() {
+		configWatch.Reload()
+
+		config, err := configWatch.GetConfig()
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(config.Certificates).To(HaveLen(1))
+		Expect(config.Certificates[0].Leaf.DNSNames).To(ConsistOf(certHostName))
 	})
 
 	Context("watching", func() {
@@ -151,6 +173,51 @@ var _ = Describe("TlsConfig", func() {
 				_, err := configWatch.GetConfig()
 				return err
 			}, 1*time.Second, 100*time.Millisecond).Should(MatchError(ContainSubstring("error decoding tls config")))
+		})
+
+		It("should reload certificate on change", func() {
+			const newDnsName = "new-name.test"
+			certBytes, keyBytes, err := cert.GenerateSelfSignedCertKey(newDnsName, nil, nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			func() {
+				certFile, err := os.Create(certPath)
+				Expect(err).ToNot(HaveOccurred())
+				defer certFile.Close()
+
+				_, err = certFile.Write(certBytes)
+				Expect(err).ToNot(HaveOccurred())
+
+				keyFile, err := os.Create(keyPath)
+				Expect(err).ToNot(HaveOccurred())
+				defer keyFile.Close()
+
+				_, err = keyFile.Write(keyBytes)
+				Expect(err).ToNot(HaveOccurred())
+			}()
+
+			Eventually(func(g Gomega) {
+				config, err := configWatch.GetConfig()
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(config.Certificates).To(HaveLen(1))
+				g.Expect(config.Certificates[0].Leaf.DNSNames).To(ConsistOf(newDnsName))
+			}, 1*time.Second, 100*time.Millisecond).Should(Succeed())
+		})
+
+		It("should fail if certificate is invalid", func() {
+			func() {
+				certFile, err := os.Create(certPath)
+				Expect(err).ToNot(HaveOccurred())
+				defer certFile.Close()
+
+				_, err = certFile.WriteString("This is invalid certificate file")
+				Expect(err).ToNot(HaveOccurred())
+			}()
+
+			Eventually(func() error {
+				_, err := configWatch.GetConfig()
+				return err
+			}, 1*time.Second, 100*time.Millisecond).Should(MatchError(ContainSubstring("failed to load certificate")))
 		})
 
 		It("should use default if file is deleted", func() {

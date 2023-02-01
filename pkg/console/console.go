@@ -41,7 +41,11 @@ func Run() error {
 
 	}
 
-	tlsConfigWatch := tlsconfig.NewWatch(filepath.Join(configDir, TlsProfileFile))
+	tlsConfigWatch := tlsconfig.NewWatch(
+		filepath.Join(configDir, TlsProfileFile),
+		serviceCertPath,
+		serviceKeyPath,
+	)
 	tlsConfigWatch.Reload()
 
 	watchDone := make(chan struct{})
@@ -79,12 +83,7 @@ func Run() error {
 		Addr: fmt.Sprintf("%s:%d", defaultAddress, defaultPort),
 		TLSConfig: &tls.Config{
 			GetConfigForClient: func(_ *tls.ClientHelloInfo) (*tls.Config, error) {
-				config, err := tlsConfigWatch.GetConfig()
-				if err != nil {
-					return nil, err
-				}
-				config.Certificates = []tls.Certificate{*serviceCert}
-				return config, nil
+				return tlsConfigWatch.GetConfig()
 			},
 			GetCertificate: func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 				// This function is not called, but it needs to be non-nil, otherwise

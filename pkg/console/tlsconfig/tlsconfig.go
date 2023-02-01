@@ -27,10 +27,14 @@ type Watch interface {
 	GetConfig() (*tls.Config, error)
 }
 
-func NewWatch(tlsProfilePath string) Watch {
+func NewWatch(tlsProfilePath string, certPath string, keyPath string) Watch {
 	return &watch{
 		tlsProfilePath:  tlsProfilePath,
 		tlsProfileError: fmt.Errorf("tls profile not loaded"),
+
+		certsPath: certPath,
+		keyPath:   keyPath,
+		certError: fmt.Errorf("certificate not loaded"),
 	}
 }
 
@@ -39,10 +43,15 @@ type watch struct {
 	lock    sync.RWMutex
 
 	tlsProfilePath string
+	certsPath      string
+	keyPath        string
 
 	tlsProfileError error
 	ciphers         []uint16
 	minTlsVersion   uint16
+
+	certificate *tls.Certificate
+	certError   error
 }
 
 func (w *watch) Run(done <-chan struct{}) error {
@@ -58,6 +67,16 @@ func (w *watch) Run(done <-chan struct{}) error {
 		return fmt.Errorf("could not add watch: %w", err)
 	}
 
+	err = watcher.Add(w.certsPath)
+	if err != nil {
+		return fmt.Errorf("failed to watch Certificate: %w", err)
+	}
+
+	err = watcher.Add(w.keyPath)
+	if err != nil {
+		return fmt.Errorf("failed to watch Certificate key: %w", err)
+	}
+
 	return w.processEvents(watcher, done)
 }
 
@@ -67,6 +86,7 @@ func (w *watch) IsRunning() bool {
 
 func (w *watch) Reload() {
 	w.reloadTlsProfile()
+	w.reloadCertificate()
 }
 
 func (w *watch) GetConfig() (*tls.Config, error) {
@@ -76,10 +96,14 @@ func (w *watch) GetConfig() (*tls.Config, error) {
 	if w.tlsProfileError != nil {
 		return nil, w.tlsProfileError
 	}
+	if w.certError != nil {
+		return nil, w.certError
+	}
 
 	return &tls.Config{
 		CipherSuites: w.ciphers,
 		MinVersion:   w.minTlsVersion,
+		Certificates: []tls.Certificate{*w.certificate},
 	}, nil
 }
 
@@ -115,8 +139,13 @@ func (w *watch) handleEvent(event fsnotify.Event) {
 		return
 	}
 
-	if strings.HasPrefix(w.tlsProfilePath, event.Name) {
+	switch {
+	case strings.HasPrefix(w.tlsProfilePath, event.Name):
 		w.reloadTlsProfile()
+	case strings.HasPrefix(w.certsPath, event.Name):
+		w.reloadCertificate()
+	case strings.HasPrefix(w.keyPath, event.Name):
+		w.reloadCertificate()
 	}
 }
 
@@ -150,6 +179,21 @@ func (w *watch) reloadTlsProfile() {
 
 	w.ciphers = ciphers
 	w.minTlsVersion = minVersion
+}
+
+func (w *watch) reloadCertificate() {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.certError = nil
+
+	certificate, err := LoadCertificates(w.certsPath, w.keyPath)
+	if err != nil {
+		w.certError = err
+		return
+	}
+
+	log.Log.Infof("Loaded TLS certificate.")
+	w.certificate = certificate
 }
 
 func loadCipherSuitesAndMinVersion(configPath string) ([]uint16, uint16, error) {
