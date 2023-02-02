@@ -50,14 +50,14 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	err := s.checkVncRbac(authToken, name, namespace)
+	err := s.checkVncRbac(request.Request.Context(), authToken, name, namespace)
 	if err != nil {
 		_ = response.WriteError(http.StatusUnauthorized, err)
 		return
 	}
 
 	vmiMeta, err := s.metadataClient.Resource(kubevirtv1.GroupVersion.WithResource("virtualmachineinstances")).
-		Namespace(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+		Namespace(namespace).Get(request.Request.Context(), name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachineInstance does no exist: %w", err))
@@ -192,14 +192,14 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 	}
 }
 
-func (s *service) checkVncRbac(rbacToken string, vmiName, vmiNamespace string) error {
+func (s *service) checkVncRbac(ctx context.Context, rbacToken, vmiName, vmiNamespace string) error {
 	tokenReview := &authnv1.TokenReview{
 		Spec: authnv1.TokenReviewSpec{
 			Token: rbacToken,
 		},
 	}
 
-	tokenReview, err := s.kubevirtClient.AuthenticationV1().TokenReviews().Create(context.TODO(), tokenReview, metav1.CreateOptions{})
+	tokenReview, err := s.kubevirtClient.AuthenticationV1().TokenReviews().Create(ctx, tokenReview, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("error authenticating token: %w", err)
 	}
@@ -234,7 +234,7 @@ func (s *service) checkVncRbac(rbacToken string, vmiName, vmiNamespace string) e
 		},
 	}
 
-	accessReview, err = s.kubevirtClient.AuthorizationV1().SubjectAccessReviews().Create(context.TODO(), accessReview, metav1.CreateOptions{})
+	accessReview, err = s.kubevirtClient.AuthorizationV1().SubjectAccessReviews().Create(ctx, accessReview, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("error checking permissions: %w", err)
 	}
