@@ -2,3 +2,4 @@
 bin/
 example-client/noVNC-1.3.0/
 manifests/kustomization.yaml
+_out/*

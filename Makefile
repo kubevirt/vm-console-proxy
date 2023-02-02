@@ -5,6 +5,16 @@ IMG_TAG ?= latest
 IMG ?= ${IMG_REPOSITORY}:${IMG_TAG}
 
 SRC_PATHS_TESTS = ./pkg/...
+PROJECT_NAME = vm-console-proxy
+MANIFETS_PATH = ./manifests
+
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
+KUSTOMIZE_VERSION ?= v4.5.7
+KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 
 .PHONY:build
 build: fmt vet
@@ -21,6 +31,16 @@ push-container:
 .PHONY: manifests
 manifests:
 	cd manifests && IMG_REPOSITORY=${IMG_REPOSITORY} IMG_TAG=${IMG_TAG} envsubst < kustomization.yaml.in > kustomization.yaml
+
+.PHONY: kustomize
+kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
+$(KUSTOMIZE): $(LOCALBIN)
+	test -s $(LOCALBIN)/kustomize || curl -s $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN)
+
+.PHONY: release-manifests
+release-manifests: kustomize manifests
+	mkdir -p ./_out
+	$(KUSTOMIZE) build ${MANIFETS_PATH} > ./_out/${PROJECT_NAME}.yaml
 
 .PHONY: deploy
 deploy: manifests
