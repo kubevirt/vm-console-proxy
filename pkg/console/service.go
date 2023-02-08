@@ -37,8 +37,7 @@ type service struct {
 	metadataClient  metadata.Interface
 	websocketDialer dialer.Dialer
 
-	// TODO: Needs to be refreshed when secret changes
-	tokenSigningKey []byte
+	getTokenSigningKey func() ([]byte, error)
 }
 
 func (s *service) TokenHandler(request *restful.Request, response *restful.Response) {
@@ -88,7 +87,14 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		UID:       string(vmiMeta.UID),
 	}
 
-	signedToken, err := token.NewSignedToken(claims, s.tokenSigningKey)
+	signingKey, err := s.getTokenSigningKey()
+	if err != nil {
+		_ = response.WriteErrorString(http.StatusInternalServerError, "error getting token signing key")
+		log.Log.Errorf("error getting token signing key: %s", err)
+		return
+	}
+
+	signedToken, err := token.NewSignedToken(claims, signingKey)
 	if err != nil {
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error signing token: %w", err))
 		return
@@ -109,7 +115,14 @@ func (s *service) VncHandler(request *restful.Request, response *restful.Respons
 		return
 	}
 
-	claims, err := token.ParseToken(authToken, s.tokenSigningKey)
+	signingKey, err := s.getTokenSigningKey()
+	if err != nil {
+		_ = response.WriteErrorString(http.StatusInternalServerError, "error getting token signing key")
+		log.Log.Errorf("error getting token signing key: %s", err)
+		return
+	}
+
+	claims, err := token.ParseToken(authToken, signingKey)
 	if err != nil {
 		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
 		return

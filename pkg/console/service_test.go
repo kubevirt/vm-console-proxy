@@ -125,7 +125,9 @@ var _ = Describe("Service tests", func() {
 			kubevirtClient:  virtClient,
 			metadataClient:  metadataClient,
 			websocketDialer: testDialer,
-			tokenSigningKey: []byte("testing-key"),
+			getTokenSigningKey: func() ([]byte, error) {
+				return []byte("testing-key"), nil
+			},
 		}
 
 		request = restful.NewRequest(&http.Request{
@@ -320,7 +322,10 @@ var _ = Describe("Service tests", func() {
 				Namespace: testNamespace,
 				UID:       testUid,
 			}
-			validToken, err := token.NewSignedToken(claims, testService.tokenSigningKey)
+			signingKey, err := testService.getTokenSigningKey()
+			Expect(err).ToNot(HaveOccurred())
+
+			validToken, err := token.NewSignedToken(claims, signingKey)
 			Expect(err).ToNot(HaveOccurred())
 
 			request.Request.Header.Set(subprotocolHeader, "base64url.bearer.authorization.k8s.io."+validToken)

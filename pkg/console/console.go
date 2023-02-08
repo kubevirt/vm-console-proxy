@@ -55,21 +55,22 @@ func Run() error {
 		log.Log.Errorf("Error running TLS config watch: %s", err)
 	}()
 
-	serviceCert, err := tlsconfig.LoadCertificates(serviceCertPath, serviceKeyPath)
-	if err != nil {
-		return err
-	}
-
-	tokenKey, err := token.CreateHmacKey(serviceCert.PrivateKey)
-	if err != nil {
-		return err
-	}
-
+	tokenKeyCache := token.NewKeyCache()
 	handlers := &service{
 		kubevirtClient:  cli,
 		metadataClient:  metadataClient,
 		websocketDialer: dialer.New(),
-		tokenSigningKey: tokenKey,
+		getTokenSigningKey: func() ([]byte, error) {
+			tlsConfig, err := tlsConfigWatch.GetConfig()
+			if err != nil {
+				return nil, err
+			}
+			tokenKey, err := tokenKeyCache.Get(tlsConfig.Certificates[0].PrivateKey)
+			if err != nil {
+				return nil, err
+			}
+			return tokenKey, nil
+		},
 	}
 
 	restful.Add(webService(handlers))
