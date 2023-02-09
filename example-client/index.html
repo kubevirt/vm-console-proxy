@@ -149,17 +149,10 @@
         status("Connecting");
 
         // Build the websocket URL used to connect
-        let url;
-        if (window.location.protocol === "https:") {
-            url = 'wss';
-        } else {
-            url = 'ws';
-        }
-        url += '://' + host;
+        let url = 'wss://' + host;
         if(port) {
             url += ':' + port;
         }
-
         url += '/api/v1alpha1/' + vmNamespace + '/' + vmName + '/vnc'
 
         // Creating a new RFB object will start a new connection

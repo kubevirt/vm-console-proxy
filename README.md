@@ -36,6 +36,8 @@ This subprotocol is used for authorization:
 The `Service` is not exposed by default, because the `Ingress` configuration
 can depend on the cluster where it is running. For example this `Ingress` can be used:
 
+[//]: # (TODO: This ingress currently does not work with OpenShit. Look into why.)
+
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -51,7 +53,7 @@ spec:
               service:
                 name: vm-console-proxy
                 port:
-                  number: 80
+                  number: 443
             path: /
             pathType: Prefix
 ```

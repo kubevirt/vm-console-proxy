@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/pointer"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -34,9 +34,7 @@ var _ = Describe("Token", func() {
 	const (
 		testHostname = "vm-console.test"
 		urlBase      = testHostname + "/api/v1alpha1/"
-		httpUrlBase  = "http://" + urlBase
-
-		apiPort = 8768
+		httpsUrlBase = "https://" + urlBase
 
 		vmiName       = "vm-cirros"
 		tokenEndpoint = "token"
@@ -59,28 +57,18 @@ var _ = Describe("Token", func() {
 				return nil, fmt.Errorf("only TCP connections are supported, got: %s", network)
 			}
 			// This address is used to specify port-forwarding connection
-			if addr != testHostname+":80" {
+			if addr != testHostname+":443" {
 				return nil, fmt.Errorf("invalid address: %s", addr)
 			}
 
-			// TODO -- namespace should be configurable
-			podList, err := ApiClient.CoreV1().Pods("kubevirt").List(context.TODO(), metav1.ListOptions{
-				LabelSelector: labels.Set{"vm-console-proxy.kubevirt.io": "vm-console-proxy"}.AsSelector().String(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			if len(podList.Items) == 0 {
-				return nil, fmt.Errorf("no pods found")
-			}
-
-			return PortForwarder.Connect(&(podList.Items[0]), apiPort)
+			return GetApiConnection()
 		}
 
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.MaxConnsPerHost = 1
 		transport.MaxIdleConnsPerHost = 1
 		transport.DialContext = portForwardDial
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		httpClient = &http.Client{
 			Transport: transport,
 		}
@@ -161,7 +149,7 @@ var _ = Describe("Token", func() {
 
 		BeforeEach(func() {
 			var err error
-			tokenUrl, err = url.JoinPath(httpUrlBase, testNamespace, vmiName, tokenEndpoint)
+			tokenUrl, err = url.JoinPath(httpsUrlBase, testNamespace, vmiName, tokenEndpoint)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -223,7 +211,7 @@ var _ = Describe("Token", func() {
 			})
 
 			It("should get token with specified duration", func() {
-				tokenUrl, err := url.JoinPath(httpUrlBase, testNamespace, vmiName, tokenEndpoint)
+				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmiName, tokenEndpoint)
 				Expect(err).ToNot(HaveOccurred())
 
 				code, body, err := httpGet(tokenUrl+"?duration=24h", saToken, httpClient)
@@ -250,7 +238,7 @@ var _ = Describe("Token", func() {
 
 	Context("/vnc endpoint", func() {
 		const (
-			wssUrlBase  = "ws://" + urlBase
+			wssUrlBase  = "wss://" + urlBase
 			vncEndpoint = "vnc"
 
 			subprotocolPrefix = "base64url.bearer.authorization.k8s.io."
@@ -267,7 +255,8 @@ var _ = Describe("Token", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			dialer = &websocket.Dialer{
-				NetDialContext: portForwardDial,
+				NetDialContext:  portForwardDial,
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
 		})
 
@@ -324,7 +313,7 @@ var _ = Describe("Token", func() {
 				}, time.Minute, time.Second).Should(Succeed())
 
 				// Get the vnc token
-				tokenUrl, err := url.JoinPath(httpUrlBase, testNamespace, vmiName, tokenEndpoint)
+				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmiName, tokenEndpoint)
 				Expect(err).ToNot(HaveOccurred())
 
 				code, body, err := httpGet(tokenUrl, saToken, httpClient)
@@ -380,7 +369,7 @@ var _ = Describe("Token", func() {
 
 			It("should fail if token is expired", func() {
 				// Get the vnc token
-				tokenUrl, err := url.JoinPath(httpUrlBase, testNamespace, vmiName, tokenEndpoint)
+				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmiName, tokenEndpoint)
 				Expect(err).ToNot(HaveOccurred())
 
 				code, tokenBody, err := httpGet(tokenUrl+"?duration=1s", saToken, httpClient)

@@ -38,6 +38,9 @@ spec:
               drop:
                 - "ALL"
           volumeMounts:
+            - name: "config"
+              mountPath: "/config"
+              readOnly: true
             - name: "vm-console-proxy-cert"
               mountPath: "/tmp/vm-console-proxy-cert"
               readOnly: true
@@ -46,6 +49,9 @@ spec:
               readOnly: true
       terminationGracePeriodSeconds: 10
       volumes:
+        - name: "config"
+          configMap:
+            name: "vm-console-proxy"
         - name: "vm-console-proxy-cert"
           secret:
             secretName: "vm-console-proxy-cert"

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"sync"
 )
 
 // This string is base64 encoded random 256 bytes.
@@ -42,4 +43,55 @@ func CreateHmacKey(key crypto.PrivateKey) ([]byte, error) {
 	}
 
 	return signature, nil
+}
+
+type KeyCache interface {
+	Get(key crypto.PrivateKey) ([]byte, error)
+}
+
+func NewKeyCache() KeyCache {
+	return &keyCache{}
+}
+
+type keyCache struct {
+	sync.Mutex
+
+	privateKey crypto.PrivateKey
+	tokenKey   []byte
+}
+
+var _ KeyCache = &keyCache{}
+
+func (k *keyCache) Get(key crypto.PrivateKey) ([]byte, error) {
+	k.Lock()
+	defer k.Unlock()
+
+	if keysEqual(key, k.privateKey) {
+		return k.tokenKey, nil
+	}
+
+	tokenKey, err := CreateHmacKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	k.privateKey = key
+	k.tokenKey = tokenKey
+
+	return tokenKey, nil
+}
+
+func keysEqual(key1, key2 crypto.PrivateKey) bool {
+	// According to documentation, all crypto.PrivateKey in standard library
+	// implement this interface.
+	type keyEqualInt interface {
+		Equal(crypto.PrivateKey) bool
+	}
+
+	key1Equal, ok := key1.(keyEqualInt)
+	if !ok {
+		return false
+	}
+
+	return key1Equal.Equal(key2)
 }
