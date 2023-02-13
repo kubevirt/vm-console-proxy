@@ -9,6 +9,12 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     steps:
+      - name: Get release
+        id: get_release
+        uses: bruceadams/get-release@v1.3.2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       - name: Install Golang 1.19
         uses: actions/setup-go@v2
         with:
@@ -18,18 +24,15 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Generate release manifests
+        env:
+          IMG_TAG: ${{ steps.get_release.outputs.tag_name }}
         run: make release-manifests
 
-      - name: Get release
-        id: get_release
-        uses: bruceadams/get-release@v1.3.2
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
       - name: Upload to Quay
+        env:
+          IMG_TAG: ${{ steps.get_release.outputs.tag_name }}
         run: |
           podman login -u="${{ secrets.QUAY_BOT }}" -p="${{ secrets.QUAY_PASSWORD }}" quay.io
-          export IMG_TAG="${{ steps.get_release.outputs.tag_name }}"
           make build-container
           make push-container
 
