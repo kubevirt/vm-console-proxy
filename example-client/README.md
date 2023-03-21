@@ -18,3 +18,6 @@ For example, the following URL will point the client to a VM after substituting 
 ```
 http://localhost:8000/?host=vm-console-kubevirt.apps-crc.testing&namespace=${VM_NAMESPACE}&name=${VM_NAME}&token=${TOKEN}
 ```
+
+**Note:** If the browser does not trust the TLS certificate from the cluster, only a generic
+error message will be shown, that does not contain any reason for the failure.
