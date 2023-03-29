@@ -33,11 +33,12 @@ import (
 var _ = Describe("Token", func() {
 	const (
 		testHostname = "vm-console.test"
-		urlBase      = testHostname + "/api/v1alpha1/"
+		urlBase      = testHostname + "/api/v1alpha1"
 		httpsUrlBase = "https://" + urlBase
 
-		vmiName       = "vm-cirros"
 		tokenEndpoint = "token"
+
+		tokenUrlTemplate = httpsUrlBase + "/" + testNamespace + "/%s/" + tokenEndpoint
 	)
 
 	var (
@@ -143,17 +144,9 @@ var _ = Describe("Token", func() {
 	})
 
 	Context("/token endpoint", func() {
-		var (
-			tokenUrl string
-		)
-
-		BeforeEach(func() {
-			var err error
-			tokenUrl, err = url.JoinPath(httpsUrlBase, testNamespace, vmiName, tokenEndpoint)
-			Expect(err).ToNot(HaveOccurred())
-		})
 
 		It("should fail if not authenticated", func() {
+			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
 			code, body, err := httpGet(tokenUrl, "", httpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
@@ -164,6 +157,7 @@ var _ = Describe("Token", func() {
 			err := ApiClient.RbacV1().RoleBindings(roleBinding.Namespace).Delete(context.TODO(), roleBinding.Name, metav1.DeleteOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
+			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
 			code, body, err := httpGet(tokenUrl, saToken, httpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
@@ -171,6 +165,7 @@ var _ = Describe("Token", func() {
 		})
 
 		It("should fail if VMI does not exist", func() {
+			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
 			code, body, err := httpGet(tokenUrl, saToken, httpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusNotFound))
@@ -178,8 +173,13 @@ var _ = Describe("Token", func() {
 		})
 
 		Context("with running VM", func() {
+
+			var (
+				vmName string
+			)
+
 			BeforeEach(func() {
-				vm := testVm(vmiName)
+				vm := testVm("test-vm-")
 				vm, err := ApiClient.VirtualMachine(testNamespace).Create(vm)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -188,19 +188,18 @@ var _ = Describe("Token", func() {
 					if err != nil && !errors.IsNotFound(err) {
 						Expect(err).ToNot(HaveOccurred())
 					}
-					Eventually(func() bool {
-						_, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(vm.Name, &metav1.GetOptions{})
-						return errors.IsNotFound(err)
-					}, time.Minute, time.Second).Should(BeTrue())
 				})
 
 				Eventually(func() error {
 					_, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(vm.Name, &metav1.GetOptions{})
 					return err
-				}, time.Minute, time.Second).Should(Succeed())
+				}, 10*time.Minute, time.Second).Should(Succeed())
+
+				vmName = vm.Name
 			})
 
 			It("should get token with default duration", func() {
+				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vmName)
 				code, body, err := httpGet(tokenUrl, saToken, httpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
@@ -211,7 +210,7 @@ var _ = Describe("Token", func() {
 			})
 
 			It("should get token with specified duration", func() {
-				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmiName, tokenEndpoint)
+				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmName, tokenEndpoint)
 				Expect(err).ToNot(HaveOccurred())
 
 				code, body, err := httpGet(tokenUrl+"?duration=24h", saToken, httpClient)
@@ -241,19 +240,16 @@ var _ = Describe("Token", func() {
 			wssUrlBase  = "wss://" + urlBase
 			vncEndpoint = "vnc"
 
+			vncUrlTemplate = wssUrlBase + "/" + testNamespace + "/%s/" + vncEndpoint
+
 			subprotocolPrefix = "base64url.bearer.authorization.k8s.io."
 		)
 
 		var (
-			vncUrl string
 			dialer *websocket.Dialer
 		)
 
 		BeforeEach(func() {
-			var err error
-			vncUrl, err = url.JoinPath(wssUrlBase, testNamespace, vmiName, vncEndpoint)
-			Expect(err).ToNot(HaveOccurred())
-
 			dialer = &websocket.Dialer{
 				NetDialContext:  portForwardDial,
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -261,6 +257,7 @@ var _ = Describe("Token", func() {
 		})
 
 		It("should fail if no token is provided", func() {
+			vncUrl := fmt.Sprintf(vncUrlTemplate, "vm-1")
 			conn, response, err := dialer.Dial(vncUrl, nil)
 			if conn != nil {
 				_ = conn.Close()
@@ -273,6 +270,7 @@ var _ = Describe("Token", func() {
 		})
 
 		It("should fail if token is invalid", func() {
+			vncUrl := fmt.Sprintf(vncUrlTemplate, "vm-2")
 			conn, response, err := dialer.Dial(vncUrl, nil)
 			if conn != nil {
 				_ = conn.Close()
@@ -292,30 +290,26 @@ var _ = Describe("Token", func() {
 
 			BeforeEach(func() {
 				// Create and start VM
-				vm = testVm(vmiName)
-				vm, err := ApiClient.VirtualMachine(testNamespace).Create(vm)
+				vm = testVm("test-vm-")
+
+				var err error
+				vm, err = ApiClient.VirtualMachine(testNamespace).Create(vm)
 				Expect(err).ToNot(HaveOccurred())
 				DeferCleanup(func() {
 					err := ApiClient.VirtualMachine(testNamespace).Delete(vm.Name, &metav1.DeleteOptions{})
 					if err != nil && !errors.IsNotFound(err) {
 						Expect(err).ToNot(HaveOccurred())
 					}
-					Eventually(func() bool {
-						_, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(vm.Name, &metav1.GetOptions{})
-						return errors.IsNotFound(err)
-					}, time.Minute, time.Second).Should(BeTrue())
 				})
 
 				Eventually(func(g Gomega) {
 					vmi, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(vm.Name, &metav1.GetOptions{})
 					g.Expect(err).ToNot(HaveOccurred())
 					g.Expect(vmi.Status.Phase).To(Equal(kubevirtcorev1.Running))
-				}, time.Minute, time.Second).Should(Succeed())
+				}, 10*time.Minute, time.Second).Should(Succeed())
 
 				// Get the vnc token
-				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmiName, tokenEndpoint)
-				Expect(err).ToNot(HaveOccurred())
-
+				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vm.Name)
 				code, body, err := httpGet(tokenUrl, saToken, httpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
@@ -336,11 +330,12 @@ var _ = Describe("Token", func() {
 				Eventually(func() bool {
 					_, err := ApiClient.VirtualMachineInstance(testNamespace).Get(vm.Name, &metav1.GetOptions{})
 					return errors.IsNotFound(err)
-				}, time.Minute, time.Second).Should(BeTrue())
+				}, 10*time.Minute, time.Second).Should(BeTrue())
 
 				// Try to access the VNC
 				dialer.Subprotocols = []string{subprotocolPrefix + vncToken}
 
+				vncUrl := fmt.Sprintf(vncUrlTemplate, vm.Name)
 				conn, response, err := dialer.Dial(vncUrl, nil)
 				if conn != nil {
 					Expect(conn.Close()).To(Succeed())
@@ -355,6 +350,7 @@ var _ = Describe("Token", func() {
 			It("should proxy VNC connection", func() {
 				dialer.Subprotocols = []string{subprotocolPrefix + vncToken, "base64.binary.k8s.io"}
 
+				vncUrl := fmt.Sprintf(vncUrlTemplate, vm.Name)
 				conn, _, err := dialer.Dial(vncUrl, nil)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -369,9 +365,7 @@ var _ = Describe("Token", func() {
 
 			It("should fail if token is expired", func() {
 				// Get the vnc token
-				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmiName, tokenEndpoint)
-				Expect(err).ToNot(HaveOccurred())
-
+				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vm.Name)
 				code, tokenBody, err := httpGet(tokenUrl+"?duration=1s", saToken, httpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
@@ -387,6 +381,7 @@ var _ = Describe("Token", func() {
 
 				dialer.Subprotocols = []string{subprotocolPrefix + vncTokenWithTimeout}
 
+				vncUrl := fmt.Sprintf(vncUrlTemplate, vm.Name)
 				conn, response, err := dialer.Dial(vncUrl, nil)
 				if conn != nil {
 					_ = conn.Close()
@@ -424,7 +419,7 @@ func httpGet(url string, authToken string, client *http.Client) (int, []byte, er
 	return response.StatusCode, body, nil
 }
 
-func testVm(name string) *kubevirtcorev1.VirtualMachine {
+func testVm(namePrefix string) *kubevirtcorev1.VirtualMachine {
 	const (
 		containerDiskName = "containerdisk"
 		cloudinitDiskName = "cloudinitdisk"
@@ -434,8 +429,8 @@ func testVm(name string) *kubevirtcorev1.VirtualMachine {
 
 	return &kubevirtcorev1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: testNamespace,
+			GenerateName: namePrefix,
+			Namespace:    testNamespace,
 		},
 		Spec: kubevirtcorev1.VirtualMachineSpec{
 			Running: pointer.BoolPtr(true),
