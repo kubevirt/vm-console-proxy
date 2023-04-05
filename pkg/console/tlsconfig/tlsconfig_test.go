@@ -4,9 +4,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"os"
-	"runtime"
+	"strings"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
 )
 
 var _ = Describe("TlsConfig", func() {
@@ -110,22 +111,15 @@ var _ = Describe("TlsConfig", func() {
 	})
 
 	Context("watching", func() {
+		var (
+			mockWatch *mockFileWatch
+		)
+
 		BeforeEach(func() {
+			mockWatch = newMockFileWatch()
+			Expect(configWatch.AddToFilewatch(mockWatch)).To(Succeed())
+
 			configWatch.Reload()
-
-			done := make(chan struct{})
-			DeferCleanup(func() {
-				close(done)
-			})
-
-			go func() {
-				defer GinkgoRecover()
-				Expect(configWatch.Run(done)).To(Succeed())
-			}()
-
-			// Wait for a short time to let the watch goroutine run
-			runtime.Gosched()
-			Eventually(configWatch.IsRunning, time.Second, 50*time.Millisecond).Should(BeTrue())
 		})
 
 		It("should reload config on change", func() {
@@ -148,16 +142,16 @@ var _ = Describe("TlsConfig", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			Eventually(func(g Gomega) {
-				config, err := configWatch.GetConfig()
-				g.Expect(err).ToNot(HaveOccurred())
+			mockWatch.Trigger(tlsConfigPath)
 
-				g.Expect(config.CipherSuites).ToNot(Equal(originalConfig.CipherSuites))
-				g.Expect(config.MinVersion).ToNot(Equal(originalConfig.MinVersion))
+			config, err := configWatch.GetConfig()
+			Expect(err).ToNot(HaveOccurred())
 
-				g.Expect(config.CipherSuites).To(BeEmpty())
-				g.Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS13)))
-			}, 1*time.Second, 100*time.Millisecond).Should(Succeed())
+			Expect(config.CipherSuites).ToNot(Equal(originalConfig.CipherSuites))
+			Expect(config.MinVersion).ToNot(Equal(originalConfig.MinVersion))
+
+			Expect(config.CipherSuites).To(BeEmpty())
+			Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS13)))
 		})
 
 		It("should fail if config is invalid", func() {
@@ -169,10 +163,10 @@ var _ = Describe("TlsConfig", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			Eventually(func() error {
-				_, err := configWatch.GetConfig()
-				return err
-			}, 1*time.Second, 100*time.Millisecond).Should(MatchError(ContainSubstring("error decoding tls config")))
+			mockWatch.Trigger(tlsConfigPath)
+
+			_, err := configWatch.GetConfig()
+			Expect(err).To(MatchError(ContainSubstring("error decoding tls config")))
 		})
 
 		It("should reload certificate on change", func() {
@@ -196,12 +190,13 @@ var _ = Describe("TlsConfig", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			Eventually(func(g Gomega) {
-				config, err := configWatch.GetConfig()
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(config.Certificates).To(HaveLen(1))
-				g.Expect(config.Certificates[0].Leaf.DNSNames).To(ConsistOf(newDnsName))
-			}, 1*time.Second, 100*time.Millisecond).Should(Succeed())
+			mockWatch.Trigger(certPath)
+			mockWatch.Trigger(keyPath)
+
+			config, err := configWatch.GetConfig()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(config.Certificates).To(HaveLen(1))
+			Expect(config.Certificates[0].Leaf.DNSNames).To(ConsistOf(newDnsName))
 		})
 
 		It("should fail if certificate is invalid", func() {
@@ -214,24 +209,58 @@ var _ = Describe("TlsConfig", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			Eventually(func() error {
-				_, err := configWatch.GetConfig()
-				return err
-			}, 1*time.Second, 100*time.Millisecond).Should(MatchError(ContainSubstring("failed to load certificate")))
+			mockWatch.Trigger(certPath)
+
+			_, err := configWatch.GetConfig()
+			Expect(err).To(MatchError(ContainSubstring("failed to load certificate")))
 		})
 
 		It("should use default if file is deleted", func() {
 			Expect(os.Remove(tlsConfigPath)).ToNot(HaveOccurred())
 
-			Eventually(func(g Gomega) {
-				config, err := configWatch.GetConfig()
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(config.CipherSuites).To(BeEmpty())
-				g.Expect(config.MinVersion).To(BeZero())
-			}, 1*time.Second, 100*time.Millisecond).Should(Succeed())
+			mockWatch.Trigger(tlsConfigPath)
+
+			config, err := configWatch.GetConfig()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(config.CipherSuites).To(BeEmpty())
+			Expect(config.MinVersion).To(BeZero())
 		})
 	})
 })
+
+type mockFileWatch struct {
+	running   atomic.Bool
+	callbacks map[string]func()
+}
+
+var _ filewatch.Watch = &mockFileWatch{}
+
+func newMockFileWatch() *mockFileWatch {
+	return &mockFileWatch{
+		callbacks: make(map[string]func()),
+	}
+}
+
+func (m *mockFileWatch) Add(path string, callback func()) error {
+	m.callbacks[path] = callback
+	return nil
+}
+
+func (m *mockFileWatch) Run(_ <-chan struct{}) error {
+	panic("not implemented in mock")
+}
+
+func (m *mockFileWatch) IsRunning() bool {
+	panic("not implemented in mock")
+}
+
+func (m *mockFileWatch) Trigger(path string) {
+	for callbackPath, callback := range m.callbacks {
+		if strings.HasPrefix(callbackPath, path) {
+			callback()
+		}
+	}
+}
 
 func TestTlsConfig(t *testing.T) {
 	RegisterFailHandler(Fail)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/kubevirt/vm-console-proxy/pkg/console/service"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/tlsconfig"
+	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
 )
 
 const (
@@ -33,6 +34,8 @@ func Run() error {
 		return err
 	}
 
+	watch := filewatch.New()
+
 	tlsConfigWatch := tlsconfig.NewWatch(
 		filepath.Join(configDir, TlsProfileFile),
 		serviceCertPath,
@@ -40,11 +43,16 @@ func Run() error {
 	)
 	tlsConfigWatch.Reload()
 
+	if err := tlsConfigWatch.AddToFilewatch(watch); err != nil {
+		return err
+	}
+
 	watchDone := make(chan struct{})
 	defer close(watchDone)
 	go func() {
-		err := tlsConfigWatch.Run(watchDone)
-		log.Log.Errorf("Error running TLS config watch: %s", err)
+		if err := watch.Run(watchDone); err != nil {
+			log.Log.Errorf("Error running file watch: %s", err)
+		}
 	}()
 
 	handlers := service.NewService(cli)
