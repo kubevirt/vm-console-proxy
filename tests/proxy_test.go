@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"github.com/mitchellh/go-vnc"
 	authnv1 "k8s.io/api/authentication/v1"
 	core "k8s.io/api/core/v1"
-	rbac "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,7 +30,6 @@ import (
 
 var _ = Describe("Token", func() {
 	const (
-		testHostname = "vm-console.test"
 		urlBase      = testHostname + "/api/v1alpha1"
 		httpsUrlBase = "https://" + urlBase
 
@@ -42,102 +39,12 @@ var _ = Describe("Token", func() {
 	)
 
 	var (
-		portForwardDial func(ctx context.Context, network, addr string) (net.Conn, error)
-		httpClient      *http.Client
-
-		serviceAccount *core.ServiceAccount
-		roleBinding    *rbac.RoleBinding
-		saToken        string
+		saToken string
 	)
 
 	BeforeEach(func() {
-		portForwardDial = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			defer GinkgoRecover()
-			// The port-forwarding only supports TCP
-			if network != "tcp" {
-				return nil, fmt.Errorf("only TCP connections are supported, got: %s", network)
-			}
-			// This address is used to specify port-forwarding connection
-			if addr != testHostname+":443" {
-				return nil, fmt.Errorf("invalid address: %s", addr)
-			}
-
-			return GetApiConnection()
-		}
-
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.MaxConnsPerHost = 1
-		transport.MaxIdleConnsPerHost = 1
-		transport.DialContext = portForwardDial
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		httpClient = &http.Client{
-			Transport: transport,
-		}
-
-		serviceAccount = &core.ServiceAccount{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "test-service-account-",
-				Namespace:    testNamespace,
-			},
-		}
-		serviceAccount, err := ApiClient.CoreV1().ServiceAccounts(testNamespace).Create(context.TODO(), serviceAccount, metav1.CreateOptions{})
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			err := ApiClient.CoreV1().ServiceAccounts(testNamespace).Delete(context.TODO(), serviceAccount.Name, metav1.DeleteOptions{})
-			if err != nil && !errors.IsNotFound(err) {
-				Expect(err).ToNot(HaveOccurred())
-			}
-			serviceAccount = nil
-		})
-
-		role := &rbac.Role{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "test-role-",
-				Namespace:    testNamespace,
-			},
-			Rules: []rbac.PolicyRule{{
-				APIGroups: []string{kubevirtcorev1.SubresourceGroupName},
-				Resources: []string{"virtualmachineinstances/vnc"},
-				Verbs:     []string{"get"},
-			}},
-		}
-		role, err = ApiClient.RbacV1().Roles(testNamespace).Create(context.TODO(), role, metav1.CreateOptions{})
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			err := ApiClient.RbacV1().Roles(testNamespace).Delete(context.TODO(), role.Name, metav1.DeleteOptions{})
-			if err != nil && !errors.IsNotFound(err) {
-				Expect(err).ToNot(HaveOccurred())
-			}
-		})
-
-		roleBinding = &rbac.RoleBinding{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "test-clusterrolebinding-",
-				Namespace:    testNamespace,
-			},
-			Subjects: []rbac.Subject{{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccount.Name,
-				Namespace: serviceAccount.Namespace,
-			}},
-			RoleRef: rbac.RoleRef{
-				APIGroup: rbac.GroupName,
-				Kind:     "Role",
-				Name:     role.Name,
-			},
-		}
-		roleBinding, err = ApiClient.RbacV1().RoleBindings(testNamespace).Create(context.TODO(), roleBinding, metav1.CreateOptions{})
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			err := ApiClient.RbacV1().RoleBindings(testNamespace).Delete(context.TODO(), roleBinding.Name, metav1.DeleteOptions{})
-			if err != nil && !errors.IsNotFound(err) {
-				Expect(err).ToNot(HaveOccurred())
-			}
-			roleBinding = nil
-		})
-
 		tokenRequest := &authnv1.TokenRequest{}
-		tokenRequest, err = ApiClient.CoreV1().ServiceAccounts(testNamespace).CreateToken(context.TODO(), serviceAccount.Name, tokenRequest, metav1.CreateOptions{})
+		tokenRequest, err := ApiClient.CoreV1().ServiceAccounts(testNamespace).CreateToken(context.TODO(), serviceAccountName, tokenRequest, metav1.CreateOptions{})
 		Expect(err).ToNot(HaveOccurred())
 
 		saToken = tokenRequest.Status.Token
@@ -147,18 +54,31 @@ var _ = Describe("Token", func() {
 
 		It("should fail if not authenticated", func() {
 			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
-			code, body, err := httpGet(tokenUrl, "", httpClient)
+			code, body, err := httpGet(tokenUrl, "", TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
 			Expect(string(body)).To(ContainSubstring("authenticating token cannot be empty"))
 		})
 
 		It("should fail if not authorized to access vmi/vnc endpoint", func() {
-			err := ApiClient.RbacV1().RoleBindings(roleBinding.Namespace).Delete(context.TODO(), roleBinding.Name, metav1.DeleteOptions{})
+			roleBinding, err := ApiClient.RbacV1().RoleBindings(testNamespace).Get(context.TODO(), roleBindingName, metav1.GetOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
+			err = ApiClient.RbacV1().RoleBindings(roleBinding.Namespace).Delete(context.TODO(), roleBinding.Name, metav1.DeleteOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			DeferCleanup(func() {
+				roleBinding.ObjectMeta.CreationTimestamp = metav1.Time{}
+				roleBinding.ObjectMeta.DeletionTimestamp = nil
+				roleBinding.ObjectMeta.ResourceVersion = ""
+				roleBinding.ObjectMeta.Generation = 0
+				roleBinding.ObjectMeta.UID = ""
+
+				_, err = ApiClient.RbacV1().RoleBindings(roleBinding.Namespace).Create(context.TODO(), roleBinding, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+			})
+
 			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
-			code, body, err := httpGet(tokenUrl, saToken, httpClient)
+			code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
 			Expect(string(body)).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
@@ -166,7 +86,7 @@ var _ = Describe("Token", func() {
 
 		It("should fail if VMI does not exist", func() {
 			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
-			code, body, err := httpGet(tokenUrl, saToken, httpClient)
+			code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusNotFound))
 			Expect(string(body)).To(ContainSubstring("VirtualMachineInstance does no exist"))
@@ -200,7 +120,7 @@ var _ = Describe("Token", func() {
 
 			It("should get token with default duration", func() {
 				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vmName)
-				code, body, err := httpGet(tokenUrl, saToken, httpClient)
+				code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
 
@@ -213,7 +133,7 @@ var _ = Describe("Token", func() {
 				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmName, tokenEndpoint)
 				Expect(err).ToNot(HaveOccurred())
 
-				code, body, err := httpGet(tokenUrl+"?duration=24h", saToken, httpClient)
+				code, body, err := httpGet(tokenUrl+"?duration=24h", saToken, TestHttpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
 
@@ -251,7 +171,7 @@ var _ = Describe("Token", func() {
 
 		BeforeEach(func() {
 			dialer = &websocket.Dialer{
-				NetDialContext:  portForwardDial,
+				NetDialContext:  PortForwardDial,
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
 		})
@@ -310,7 +230,7 @@ var _ = Describe("Token", func() {
 
 				// Get the vnc token
 				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vm.Name)
-				code, body, err := httpGet(tokenUrl, saToken, httpClient)
+				code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
 
@@ -366,7 +286,7 @@ var _ = Describe("Token", func() {
 			It("should fail if token is expired", func() {
 				// Get the vnc token
 				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vm.Name)
-				code, tokenBody, err := httpGet(tokenUrl+"?duration=1s", saToken, httpClient)
+				code, tokenBody, err := httpGet(tokenUrl+"?duration=1s", saToken, TestHttpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
 
