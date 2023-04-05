@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,6 +33,8 @@ const (
 
 	testHostname = "vm-console.test"
 
+	configMapName = "vm-console-proxy"
+
 	testNamespace      = "vm-console-proxy-functests"
 	serviceAccountName = "vm-console-proxy-functests"
 	roleBindingName    = serviceAccountName
@@ -44,6 +47,8 @@ var (
 
 var (
 	portForwarder port_forwarder.Forwarder
+
+	originalConfigMap *core.ConfigMap
 )
 
 var _ = BeforeSuite(func() {
@@ -65,6 +70,9 @@ var _ = BeforeSuite(func() {
 	TestHttpClient = &http.Client{
 		Transport: transport,
 	}
+
+	originalConfigMap, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	Expect(err).ToNot(HaveOccurred())
 
 	namespaceObj := &core.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -140,6 +148,51 @@ var _ = BeforeSuite(func() {
 		}
 	})
 })
+
+func RevertToOriginalConfigMap() {
+	Eventually(func() error {
+		foundConfig, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			newConfig := &core.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:                       originalConfigMap.Name,
+					Namespace:                  originalConfigMap.Namespace,
+					DeletionGracePeriodSeconds: originalConfigMap.DeletionGracePeriodSeconds,
+					Labels:                     originalConfigMap.Labels,
+					Annotations:                originalConfigMap.Annotations,
+					OwnerReferences:            originalConfigMap.OwnerReferences,
+					Finalizers:                 originalConfigMap.Finalizers,
+				},
+				Immutable:  originalConfigMap.Immutable,
+				Data:       originalConfigMap.Data,
+				BinaryData: originalConfigMap.BinaryData,
+			}
+			_, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Create(context.TODO(), newConfig, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+
+		foundConfig.Data = originalConfigMap.Data
+		foundConfig.BinaryData = originalConfigMap.BinaryData
+
+		_, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Update(context.TODO(), foundConfig, metav1.UpdateOptions{})
+		return err
+	}, 10*time.Second, time.Second).Should(Succeed())
+}
+
+func UpdateConfigMap(updateFunc func(configMap *core.ConfigMap)) {
+	Eventually(func() error {
+		foundConfig, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		updateFunc(foundConfig)
+		_, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Update(context.TODO(), foundConfig, metav1.UpdateOptions{})
+		return err
+	}, 10*time.Second, time.Second).Should(Succeed())
+}
 
 func GetApiConnection() (net.Conn, error) {
 	podList, err := ApiClient.CoreV1().Pods(DeploymentNamespace).List(context.TODO(), metav1.ListOptions{
