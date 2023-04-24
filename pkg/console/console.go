@@ -11,7 +11,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
-	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/service"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/tlsconfig"
 	"github.com/kubevirt/vm-console-proxy/pkg/token"
 )
@@ -56,11 +56,10 @@ func Run() error {
 	}()
 
 	tokenKeyCache := token.NewKeyCache()
-	handlers := &service{
-		kubevirtClient:  cli,
-		metadataClient:  metadataClient,
-		websocketDialer: dialer.New(),
-		getTokenSigningKey: func() ([]byte, error) {
+
+	handlers := service.NewService(cli,
+		metadataClient,
+		func() ([]byte, error) {
 			tlsConfig, err := tlsConfigWatch.GetConfig()
 			if err != nil {
 				return nil, err
@@ -70,8 +69,7 @@ func Run() error {
 				return nil, err
 			}
 			return tokenKey, nil
-		},
-	}
+		})
 
 	restful.Add(webService(handlers))
 	cors := restful.CrossOriginResourceSharing{
@@ -98,7 +96,7 @@ func Run() error {
 	return server.ListenAndServeTLS("", "")
 }
 
-func webService(handlers *service) *restful.WebService {
+func webService(handlers service.Service) *restful.WebService {
 	ws := new(restful.WebService)
 	ws.Route(ws.GET(urlPathPrefix + "/token").
 		To(handlers.TokenHandler).

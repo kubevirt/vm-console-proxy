@@ -1,4 +1,4 @@
-package console
+package service
 
 import (
 	"context"
@@ -31,6 +31,21 @@ const (
 	virtHandlerCertPath = "/etc/virt-handler/clientcertificates/tls.crt"
 	virtHandlerKeyPath  = "/etc/virt-handler/clientcertificates/tls.key"
 )
+
+type Service interface {
+	TokenHandler(request *restful.Request, response *restful.Response)
+	VncHandler(request *restful.Request, response *restful.Response)
+}
+
+func NewService(kubevirtClient kubecli.KubevirtClient, metadataClient metadata.Interface, tokenSigningFunc func() ([]byte, error)) Service {
+	return &service{
+		kubevirtClient:  kubevirtClient,
+		metadataClient:  metadataClient,
+		websocketDialer: dialer.New(),
+
+		getTokenSigningKey: tokenSigningFunc,
+	}
+}
 
 type service struct {
 	kubevirtClient  kubecli.KubevirtClient

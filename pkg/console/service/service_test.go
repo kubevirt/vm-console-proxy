@@ -1,4 +1,4 @@
-package console
+package service
 
 import (
 	"crypto/tls"
