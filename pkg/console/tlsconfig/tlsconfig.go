@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -24,23 +25,28 @@ type Watch interface {
 	GetConfig() (*tls.Config, error)
 }
 
-func NewWatch(tlsProfilePath string, certPath string, keyPath string) Watch {
+func NewWatch(configDir, tlsProfileFileName, certAndKeyDir, certsName, keyName string) Watch {
 	return &watch{
-		tlsProfilePath:  tlsProfilePath,
-		tlsProfileError: fmt.Errorf("tls profile not loaded"),
+		configDir:          configDir,
+		tlsProfileFileName: tlsProfileFileName,
+		tlsProfileError:    fmt.Errorf("tls profile not loaded"),
 
-		certsPath: certPath,
-		keyPath:   keyPath,
-		certError: fmt.Errorf("certificate not loaded"),
+		certAndKeyDir: certAndKeyDir,
+		certsName:     certsName,
+		keyName:       keyName,
+		certError:     fmt.Errorf("certificate not loaded"),
 	}
 }
 
 type watch struct {
 	lock sync.RWMutex
 
-	tlsProfilePath string
-	certsPath      string
-	keyPath        string
+	configDir          string
+	tlsProfileFileName string
+
+	certAndKeyDir string
+	certsName     string
+	keyName       string
 
 	tlsProfileError error
 	ciphers         []uint16
@@ -51,13 +57,10 @@ type watch struct {
 }
 
 func (w *watch) AddToFilewatch(watch filewatch.Watch) error {
-	if err := watch.Add(w.tlsProfilePath, w.reloadTlsProfile); err != nil {
+	if err := watch.Add(w.configDir, w.reloadTlsProfile); err != nil {
 		return err
 	}
-	if err := watch.Add(w.certsPath, w.reloadCertificate); err != nil {
-		return err
-	}
-	return watch.Add(w.keyPath, w.reloadCertificate)
+	return watch.Add(w.certAndKeyDir, w.reloadCertificate)
 }
 
 func (w *watch) Reload() {
@@ -88,7 +91,7 @@ func (w *watch) reloadTlsProfile() {
 	defer w.lock.Unlock()
 	w.tlsProfileError = nil
 
-	ciphers, minVersion, err := loadCipherSuitesAndMinVersion(w.tlsProfilePath)
+	ciphers, minVersion, err := loadCipherSuitesAndMinVersion(filepath.Join(w.configDir, w.tlsProfileFileName))
 	if errors.Is(err, os.ErrNotExist) {
 		// Config file does not exist, using zero values for default
 		w.ciphers = nil
@@ -120,7 +123,10 @@ func (w *watch) reloadCertificate() {
 	defer w.lock.Unlock()
 	w.certError = nil
 
-	certificate, err := LoadCertificates(w.certsPath, w.keyPath)
+	certificate, err := LoadCertificates(
+		filepath.Join(w.certAndKeyDir, w.certsName),
+		filepath.Join(w.certAndKeyDir, w.keyName),
+	)
 	if err != nil {
 		w.certError = err
 		return

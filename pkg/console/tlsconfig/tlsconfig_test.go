@@ -2,8 +2,8 @@ package tlsconfig
 
 import (
 	"crypto/tls"
-	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -25,29 +25,15 @@ var _ = Describe("TlsConfig", func() {
 	)
 
 	var (
+		configDir     string
 		tlsConfigPath string
+
+		certAndKeyDir string
 		certPath      string
 		keyPath       string
 
 		configWatch Watch
 	)
-
-	createTempFile := func(pattern string, content []byte) string {
-		tempFile, err := os.CreateTemp("", pattern)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			err := os.Remove(tempFile.Name())
-			if !errors.Is(err, os.ErrNotExist) {
-				Expect(err).ToNot(HaveOccurred())
-			}
-		})
-		defer tempFile.Close()
-
-		_, err = tempFile.Write(content)
-		Expect(err).ToNot(HaveOccurred())
-
-		return tempFile.Name()
-	}
 
 	BeforeEach(func() {
 		tlsProfile := &v1alpha1.TlsSecurityProfile{
@@ -57,14 +43,29 @@ var _ = Describe("TlsConfig", func() {
 		tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 		Expect(err).ToNot(HaveOccurred())
 
+		tmpDir := GinkgoT().TempDir()
+		configDir := filepath.Join(tmpDir, "test-config")
+		Expect(os.MkdirAll(configDir, 0755)).To(Succeed())
+
+		const tlsConfigName = "tls-profile.yaml"
+		tlsConfigPath = filepath.Join(configDir, tlsConfigName)
+		Expect(os.WriteFile(tlsConfigPath, tlsProfileYaml, 0666)).To(Succeed())
+
 		certBytes, keyBytes, err := cert.GenerateSelfSignedCertKey(certHostName, nil, nil)
 		Expect(err).ToNot(HaveOccurred())
 
-		tlsConfigPath = createTempFile("vm-console-proxy-tls-config-*.yaml", tlsProfileYaml)
-		certPath = createTempFile("vm-console-proxy-cert-*.crt", certBytes)
-		keyPath = createTempFile("vm-console-proxy-key-*.key", keyBytes)
+		certAndKeyDir := filepath.Join(tmpDir, "test-cert-and-key")
+		Expect(os.MkdirAll(certAndKeyDir, 0755)).To(Succeed())
 
-		configWatch = NewWatch(tlsConfigPath, certPath, keyPath)
+		const certName = "vm-console-proxy.crt"
+		certPath = filepath.Join(certAndKeyDir, certName)
+		Expect(os.WriteFile(certPath, certBytes, 0666)).To(Succeed())
+
+		const keyName = "vm-console-proxy.key"
+		keyPath = filepath.Join(certAndKeyDir, keyName)
+		Expect(os.WriteFile(keyPath, keyBytes, 0666)).To(Succeed())
+
+		configWatch = NewWatch(configDir, tlsConfigName, certAndKeyDir, certName, keyName)
 	})
 
 	It("should fail if config was not loaded", func() {
@@ -142,7 +143,7 @@ var _ = Describe("TlsConfig", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			mockWatch.Trigger(tlsConfigPath)
+			mockWatch.Trigger(configDir)
 
 			config, err := configWatch.GetConfig()
 			Expect(err).ToNot(HaveOccurred())
@@ -163,7 +164,7 @@ var _ = Describe("TlsConfig", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			mockWatch.Trigger(tlsConfigPath)
+			mockWatch.Trigger(configDir)
 
 			_, err := configWatch.GetConfig()
 			Expect(err).To(MatchError(ContainSubstring("error decoding tls config")))
@@ -190,8 +191,7 @@ var _ = Describe("TlsConfig", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			mockWatch.Trigger(certPath)
-			mockWatch.Trigger(keyPath)
+			mockWatch.Trigger(certAndKeyDir)
 
 			config, err := configWatch.GetConfig()
 			Expect(err).ToNot(HaveOccurred())
@@ -209,7 +209,7 @@ var _ = Describe("TlsConfig", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			mockWatch.Trigger(certPath)
+			mockWatch.Trigger(certAndKeyDir)
 
 			_, err := configWatch.GetConfig()
 			Expect(err).To(MatchError(ContainSubstring("failed to load certificate")))
@@ -218,7 +218,7 @@ var _ = Describe("TlsConfig", func() {
 		It("should use default if file is deleted", func() {
 			Expect(os.Remove(tlsConfigPath)).ToNot(HaveOccurred())
 
-			mockWatch.Trigger(tlsConfigPath)
+			mockWatch.Trigger(configDir)
 
 			config, err := configWatch.GetConfig()
 			Expect(err).ToNot(HaveOccurred())

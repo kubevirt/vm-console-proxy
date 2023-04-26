@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"path/filepath"
 
 	"github.com/emicklei/go-restful/v3"
 	"kubevirt.io/client-go/kubecli"
@@ -21,8 +20,9 @@ const (
 	defaultAddress = "0.0.0.0"
 	defaultPort    = 8768
 
-	serviceCertPath = "/tmp/vm-console-proxy-cert/tls.crt"
-	serviceKeyPath  = "/tmp/vm-console-proxy-cert/tls.key"
+	serviceCertDir = "/tmp/vm-console-proxy-cert"
+	certName       = "tls.crt"
+	keyName        = "tls.key"
 
 	configDir      = "/config"
 	TlsProfileFile = "tls-profile-v1alpha1.yaml"
@@ -37,9 +37,8 @@ func Run() error {
 	watch := filewatch.New()
 
 	tlsConfigWatch := tlsconfig.NewWatch(
-		filepath.Join(configDir, TlsProfileFile),
-		serviceCertPath,
-		serviceKeyPath,
+		configDir, TlsProfileFile,
+		serviceCertDir, certName, keyName,
 	)
 	tlsConfigWatch.Reload()
 
