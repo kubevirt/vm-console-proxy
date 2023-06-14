@@ -2,34 +2,35 @@ package service
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/emicklei/go-restful/v3"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/gorilla/websocket"
 	authnv1 "k8s.io/api/authentication/v1"
 	authzv1 "k8s.io/api/authorization/v1"
+	core "k8s.io/api/core/v1"
+	rbac "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/metadata"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
+	kubevirt "kubevirt.io/api/core"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
-	"kubevirt.io/client-go/log"
 
 	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
-	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
-	"github.com/kubevirt/vm-console-proxy/pkg/console/tlsconfig"
-	"github.com/kubevirt/vm-console-proxy/pkg/token"
 )
 
 const (
-	virtHandlerCertPath = "/etc/virt-handler/clientcertificates/tls.crt"
-	virtHandlerKeyPath  = "/etc/virt-handler/clientcertificates/tls.key"
+	AppKubernetesNameLabel      = "app.kubernetes.io/name"
+	AppKubernetesPartOfLabel    = "app.kubernetes.io/part-of"
+	AppKubernetesVersionLabel   = "app.kubernetes.io/version"
+	AppKubernetesManagedByLabel = "app.kubernetes.io/managed-by"
+	AppKubernetesComponentLabel = "app.kubernetes.io/component"
 )
 
 type Service interface {
@@ -37,22 +38,14 @@ type Service interface {
 	VncHandler(request *restful.Request, response *restful.Response)
 }
 
-func NewService(kubevirtClient kubecli.KubevirtClient, metadataClient metadata.Interface, tokenSigningFunc func() ([]byte, error)) Service {
+func NewService(kubevirtClient kubecli.KubevirtClient) Service {
 	return &service{
-		kubevirtClient:  kubevirtClient,
-		metadataClient:  metadataClient,
-		websocketDialer: dialer.New(),
-
-		getTokenSigningKey: tokenSigningFunc,
+		kubevirtClient: kubevirtClient,
 	}
 }
 
 type service struct {
-	kubevirtClient  kubecli.KubevirtClient
-	metadataClient  metadata.Interface
-	websocketDialer dialer.Dialer
-
-	getTokenSigningKey func() ([]byte, error)
+	kubevirtClient kubecli.KubevirtClient
 }
 
 func (s *service) TokenHandler(request *restful.Request, response *restful.Response) {
@@ -74,143 +67,38 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	vmiMeta, err := s.metadataClient.Resource(kubevirtv1.GroupVersion.WithResource("virtualmachineinstances")).
-		Namespace(params.namespace).Get(request.Request.Context(), params.name, metav1.GetOptions{})
+	vm, err := s.kubevirtClient.VirtualMachine(params.namespace).Get(params.name, &metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachineInstance does no exist: %w", err))
+			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachine does not exist: %w", err))
 			return
 		}
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error getting VirtualMachineInstance: %w", err))
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error getting VirtualMachine: %w", err))
 		return
 	}
 
-	claims := &token.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(params.duration)),
-		},
-		Name:      params.name,
-		Namespace: params.namespace,
-		UID:       string(vmiMeta.UID),
-	}
-
-	signingKey, err := s.getTokenSigningKey()
+	resourceName := vm.Name + "-vnc-access"
+	err = s.createResources(request.Request.Context(), resourceName, vm)
 	if err != nil {
-		_ = response.WriteErrorString(http.StatusInternalServerError, "error getting token signing key")
-		log.Log.Errorf("error getting token signing key: %s", err)
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error creating resources: %w", err))
 		return
 	}
 
-	signedToken, err := token.NewSignedToken(claims, signingKey)
+	token, err := s.requestToken(request.Request.Context(), vm.Namespace, resourceName, params.duration)
 	if err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error signing token: %w", err))
+		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed to request token: %w", err))
 		return
 	}
 
 	_ = response.WriteAsJson(&v1alpha1.TokenResponse{
-		Token: signedToken,
+		Token: token,
 	})
 }
 
-func (s *service) VncHandler(request *restful.Request, response *restful.Response) {
-	namespace := request.PathParameter("namespace")
-	name := request.PathParameter("name")
-
-	authToken := getAuthTokenWebsocket(request)
-	if len(authToken) == 0 {
-		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
-		return
-	}
-
-	signingKey, err := s.getTokenSigningKey()
-	if err != nil {
-		_ = response.WriteErrorString(http.StatusInternalServerError, "error getting token signing key")
-		log.Log.Errorf("error getting token signing key: %s", err)
-		return
-	}
-
-	claims, err := token.ParseToken(authToken, signingKey)
-	if err != nil {
-		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
-		return
-	}
-
-	if claims.Name != name || claims.Namespace != namespace {
-		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
-		return
-	}
-
-	vmi, err := s.kubevirtClient.VirtualMachineInstance(namespace).Get(name, &metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachineInstance does no exist: %w", err))
-			return
-		}
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("error getting VirtualMachineInstance: %w", err))
-		return
-	}
-
-	if claims.UID != string(vmi.UID) {
-		_ = response.WriteErrorString(http.StatusUnauthorized, "request is not authenticated")
-		return
-	}
-
-	if !vmi.IsRunning() {
-		_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VMI %s/%s is not running", vmi.Namespace, vmi.Name))
-		return
-	}
-
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		ClientAuth:         tls.RequireAndVerifyClientCert,
-		GetClientCertificate: func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			return tlsconfig.LoadCertificates(virtHandlerCertPath, virtHandlerKeyPath)
-		},
-	}
-
-	serverConn, err := s.websocketDialer.DialVirtHandler(s.kubevirtClient, vmi, tlsConfig)
-	if err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed dial vnc: %w", err))
-		return
-	}
-
-	clientConn, err := s.websocketDialer.Upgrade(response.ResponseWriter, request.Request)
-	if err != nil {
-		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed upgrade client connection: %w", err))
-		return
-	}
-
-	ctx, cancel := context.WithCancel(request.Request.Context())
-	defer cancel()
-	go func() {
-		<-ctx.Done()
-		serverConn.Close()
-		clientConn.Close()
-	}()
-
-	copyResults := make(chan error, 2)
-	go func() {
-		_, err := io.Copy(clientConn, serverConn)
-		copyResults <- err
-	}()
-	go func() {
-		_, err := io.Copy(serverConn, clientConn)
-		copyResults <- err
-	}()
-
-	res1 := <-copyResults
-	cancel()
-	res2 := <-copyResults
-
-	err = res1
-	if err == nil {
-		err = res2
-	}
-
-	// TODO: this error is always shown. Look into why.
-	if err != nil {
-		log.Log.Errorf("error with websocket connection: %s", err)
-	}
+func (s *service) VncHandler(_ *restful.Request, response *restful.Response) {
+	_ = response.WriteError(http.StatusGone, fmt.Errorf(
+		"/vnc endpoint was removed",
+	))
 }
 
 func (s *service) checkVncRbac(ctx context.Context, rbacToken, vmiName, vmiNamespace string) error {
@@ -266,24 +154,111 @@ func (s *service) checkVncRbac(ctx context.Context, rbacToken, vmiName, vmiNames
 	return nil
 }
 
+func (s *service) createResources(ctx context.Context, name string, vmMeta metav1.Object) error {
+	const appLabelValue = "vm-console-proxy"
+
+	namespace := vmMeta.GetNamespace()
+	commonLabels := map[string]string{
+		AppKubernetesNameLabel:      appLabelValue,
+		AppKubernetesPartOfLabel:    appLabelValue,
+		AppKubernetesManagedByLabel: appLabelValue,
+		AppKubernetesComponentLabel: appLabelValue,
+	}
+
+	vmOwnerRef := metav1.OwnerReference{
+		APIVersion: kubevirt.GroupName,
+		Kind:       "VirtualMachine",
+		Name:       vmMeta.GetName(),
+		UID:        vmMeta.GetUID(),
+	}
+
+	serviceAccount, err := createOrUpdate[*core.ServiceAccount](
+		ctx,
+		name,
+		namespace,
+		s.kubevirtClient.CoreV1().ServiceAccounts(namespace),
+		func(foundObj *core.ServiceAccount) {
+			foundObj.Labels = commonLabels
+			foundObj.OwnerReferences = []metav1.OwnerReference{vmOwnerRef}
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create service account: %w", err)
+	}
+
+	role, err := createOrUpdate[*rbac.Role](
+		ctx,
+		name,
+		namespace,
+		s.kubevirtClient.RbacV1().Roles(namespace),
+		func(foundObj *rbac.Role) {
+			foundObj.Labels = commonLabels
+			foundObj.OwnerReferences = []metav1.OwnerReference{vmOwnerRef}
+			foundObj.Rules = []rbac.PolicyRule{{
+				APIGroups:     []string{kubevirtv1.SubresourceGroupName},
+				Resources:     []string{"virtualmachineinstances/vnc"},
+				ResourceNames: []string{vmMeta.GetName()},
+				Verbs:         []string{"get"},
+			}}
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create role: %w", err)
+	}
+
+	_, err = createOrUpdate[*rbac.RoleBinding](
+		ctx,
+		name,
+		namespace,
+		s.kubevirtClient.RbacV1().RoleBindings(namespace),
+		func(foundObj *rbac.RoleBinding) {
+			foundObj.Labels = commonLabels
+			foundObj.OwnerReferences = []metav1.OwnerReference{vmOwnerRef}
+			foundObj.Subjects = []rbac.Subject{{
+				Kind: "ServiceAccount",
+				Name: serviceAccount.Name,
+			}}
+			foundObj.RoleRef = rbac.RoleRef{
+				APIGroup: rbac.GroupName,
+				Kind:     "Role",
+				Name:     role.Name,
+			}
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create role binding: %w", err)
+	}
+	return nil
+}
+
+func (s *service) requestToken(ctx context.Context, serviceAccountNamespace string, serviceAccountName string, duration time.Duration) (string, error) {
+	durationSeconds := int64(duration.Seconds())
+	tokenRequest := &authnv1.TokenRequest{
+		Spec: authnv1.TokenRequestSpec{
+			Audiences:         nil,
+			ExpirationSeconds: &durationSeconds,
+			BoundObjectRef:    nil,
+		},
+	}
+
+	tokenRequest, err := s.kubevirtClient.CoreV1().ServiceAccounts(serviceAccountNamespace).CreateToken(
+		ctx,
+		serviceAccountName,
+		tokenRequest,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return "", err
+	}
+	return tokenRequest.Status.Token, nil
+}
+
 func getAuthToken(request *restful.Request) string {
 	authHeader := request.HeaderParameter("Authorization")
 
 	const bearerPrefix = "Bearer "
 	if strings.HasPrefix(authHeader, bearerPrefix) {
 		return authHeader[len(bearerPrefix):]
-	}
-	return ""
-}
-
-func getAuthTokenWebsocket(request *restful.Request) string {
-	subprotocols := websocket.Subprotocols(request.Request)
-
-	const authSubprotocolPrefix = "base64url.bearer.authorization.k8s.io."
-	for _, subprotocol := range subprotocols {
-		if strings.HasPrefix(subprotocol, authSubprotocolPrefix) {
-			return subprotocol[len(authSubprotocolPrefix):]
-		}
 	}
 	return ""
 }
@@ -316,4 +291,63 @@ func readTokenRequestParameters(request *restful.Request) (*tokenRequestParams, 
 		name:      name,
 		duration:  duration,
 	}, nil
+}
+
+type clientInterface[PT any] interface {
+	Create(ctx context.Context, obj PT, opts metav1.CreateOptions) (PT, error)
+	Update(ctx context.Context, obj PT, opts metav1.UpdateOptions) (PT, error)
+	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (PT, error)
+}
+
+func createOrUpdate[PT interface {
+	*T
+	metav1.Object
+	runtime.Object
+}, T any](ctx context.Context, objName string, objNamespace string, client clientInterface[PT], mutateFn func(PT)) (PT, error) {
+	return retryOnConflict(ctx, retry.DefaultRetry, func() (PT, error) {
+		foundObj, err := client.Get(ctx, objName, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			newObj := PT(new(T))
+			newObj.SetName(objName)
+			newObj.SetNamespace(objNamespace)
+			mutateFn(newObj)
+			return client.Create(ctx, newObj, metav1.CreateOptions{})
+		}
+		if err != nil {
+			return foundObj, err
+		}
+
+		copyObj := foundObj.DeepCopyObject().(PT)
+		mutateFn(foundObj)
+
+		if equality.Semantic.DeepEqual(foundObj, copyObj) {
+			return foundObj, nil
+		}
+
+		return client.Update(ctx, foundObj, metav1.UpdateOptions{})
+	})
+}
+
+func retryOnConflict[T any](ctx context.Context, backoff wait.Backoff, fn func() (T, error)) (T, error) {
+	var result T
+	var lastErr error
+	err := wait.ExponentialBackoffWithContext(ctx, backoff, func() (bool, error) {
+		var err error
+		result, err = fn()
+
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.IsConflict(err):
+			lastErr = err
+			return false, nil
+		default:
+			return false, err
+		}
+	})
+	if err == wait.ErrWaitTimeout {
+		return result, lastErr
+	}
+	return result, err
 }

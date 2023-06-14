@@ -16,10 +16,48 @@ rules:
   - kubevirt.io
   resources:
   - virtualmachineinstances
+  - virtualmachines
   verbs:
   - get
   - list
   - watch
+- apiGroups:
+    - subresources.kubevirt.io
+  resources:
+    - virtualmachineinstances/vnc
+  verbs:
+    - get
+- apiGroups:
+    - ""
+  resources:
+    - serviceaccounts
+  verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - delete
+    - patch
+- apiGroups:
+    - ""
+  resources:
+    - serviceaccounts/token
+  verbs:
+    - create
+- apiGroups:
+    - rbac.authorization.k8s.io
+  resources:
+    - roles
+    - rolebindings
+  verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - delete
+    - patch
 - apiGroups:
   - authentication.k8s.io
   resources:

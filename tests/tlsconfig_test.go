@@ -3,8 +3,9 @@ package tests
 import (
 	"context"
 	"crypto/tls"
-	"sigs.k8s.io/yaml"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

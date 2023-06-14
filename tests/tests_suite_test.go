@@ -3,6 +3,7 @@ package tests
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -11,7 +12,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	"golang.org/x/net/context"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
@@ -32,6 +32,8 @@ const (
 	apiPort = 8768
 
 	testHostname = "vm-console.test"
+	urlBase      = testHostname + "/api/v1alpha1"
+	httpsUrlBase = "https://" + urlBase
 
 	configMapName = "vm-console-proxy"
 
@@ -149,6 +151,10 @@ var _ = BeforeSuite(func() {
 	})
 })
 
+var _ = AfterSuite(func() {
+	RevertToOriginalConfigMap()
+})
+
 func RevertToOriginalConfigMap() {
 	Eventually(func() error {
 		foundConfig, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
@@ -220,6 +226,29 @@ func PortForwardDial(ctx context.Context, network, addr string) (net.Conn, error
 	}
 
 	return GetApiConnection()
+}
+
+func httpGet(url string, authToken string, client *http.Client) (int, []byte, error) {
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if authToken != "" {
+		request.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return 0, nil, err
+	}
+	return response.StatusCode, body, nil
 }
 
 func TestFunctional(t *testing.T) {

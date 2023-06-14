@@ -15,24 +15,20 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/websocket"
-	"github.com/mitchellh/go-vnc"
 	authnv1 "k8s.io/api/authentication/v1"
+	authzv1 "k8s.io/api/authorization/v1"
 	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
-	"kubevirt.io/client-go/kubecli"
 
 	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
 )
 
-var _ = Describe("Token", func() {
+var _ = Describe("Kubevirt proxy", func() {
 	const (
-		urlBase      = testHostname + "/api/v1alpha1"
-		httpsUrlBase = "https://" + urlBase
-
 		tokenEndpoint = "token"
 
 		tokenUrlTemplate = httpsUrlBase + "/" + testNamespace + "/%s/" + tokenEndpoint
@@ -84,16 +80,15 @@ var _ = Describe("Token", func() {
 			Expect(string(body)).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
 		})
 
-		It("should fail if VMI does not exist", func() {
+		It("should fail if VM does not exist", func() {
 			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
 			code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusNotFound))
-			Expect(string(body)).To(ContainSubstring("VirtualMachineInstance does no exist"))
+			Expect(string(body)).To(ContainSubstring("VirtualMachine does not exist"))
 		})
 
-		Context("with running VM", func() {
-
+		Context("with VM", func() {
 			var (
 				vmName string
 			)
@@ -161,8 +156,6 @@ var _ = Describe("Token", func() {
 			vncEndpoint = "vnc"
 
 			vncUrlTemplate = wssUrlBase + "/" + testNamespace + "/%s/" + vncEndpoint
-
-			subprotocolPrefix = "base64url.bearer.authorization.k8s.io."
 		)
 
 		var (
@@ -176,7 +169,7 @@ var _ = Describe("Token", func() {
 			}
 		})
 
-		It("should fail if no token is provided", func() {
+		It("should return an error when calling the /vnc endpoint", func() {
 			vncUrl := fmt.Sprintf(vncUrlTemplate, "vm-1")
 			conn, response, err := dialer.Dial(vncUrl, nil)
 			if conn != nil {
@@ -185,159 +178,75 @@ var _ = Describe("Token", func() {
 			}
 			Expect(err).To(MatchError(websocket.ErrBadHandshake))
 
-			Expect(response.StatusCode).To(Equal(http.StatusUnauthorized))
-			Expect(io.ReadAll(response.Body)).To(ContainSubstring("request is not authenticated"))
+			Expect(response.StatusCode).To(Equal(http.StatusGone))
+			Expect(io.ReadAll(response.Body)).To(ContainSubstring("/vnc endpoint was removed"))
 		})
+	})
 
-		It("should fail if token is invalid", func() {
-			vncUrl := fmt.Sprintf(vncUrlTemplate, "vm-2")
-			conn, response, err := dialer.Dial(vncUrl, nil)
-			if conn != nil {
-				_ = conn.Close()
-				Fail("Websocket connection should not succeed.")
-			}
-			Expect(err).To(MatchError(websocket.ErrBadHandshake))
+	Context("accessing kubevirt VMI/vnc endpoint", func() {
+		It("should be able to access VMI/vnc endpoint using token", func() {
+			vm := testVm("test-vm-")
+			vm.Spec.Running = pointer.Bool(false)
+			vm, err := ApiClient.VirtualMachine(testNamespace).Create(vm)
+			Expect(err).ToNot(HaveOccurred())
 
-			Expect(response.StatusCode).To(Equal(http.StatusUnauthorized))
-			Expect(io.ReadAll(response.Body)).To(ContainSubstring("request is not authenticated"))
-		})
-
-		Context("with VMI", func() {
-			var (
-				vm       *kubevirtcorev1.VirtualMachine
-				vncToken string
-			)
-
-			BeforeEach(func() {
-				// Create and start VM
-				vm = testVm("test-vm-")
-
-				var err error
-				vm, err = ApiClient.VirtualMachine(testNamespace).Create(vm)
-				Expect(err).ToNot(HaveOccurred())
-				DeferCleanup(func() {
-					err := ApiClient.VirtualMachine(testNamespace).Delete(vm.Name, &metav1.DeleteOptions{})
-					if err != nil && !errors.IsNotFound(err) {
-						Expect(err).ToNot(HaveOccurred())
-					}
-				})
-
-				Eventually(func(g Gomega) {
-					vmi, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(vm.Name, &metav1.GetOptions{})
-					g.Expect(err).ToNot(HaveOccurred())
-					g.Expect(vmi.Status.Phase).To(Equal(kubevirtcorev1.Running))
-				}, 10*time.Minute, time.Second).Should(Succeed())
-
-				// Get the vnc token
-				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vm.Name)
-				code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(code).To(Equal(http.StatusOK))
-
-				tokenResponse := &api.TokenResponse{}
-				Expect(json.Unmarshal(body, tokenResponse)).To(Succeed())
-				Expect(tokenResponse.Token).ToNot(BeEmpty())
-
-				vncToken = tokenResponse.Token
-			})
-
-			It("should fail if VMI does not exist", func() {
-				// Delete the VM
+			DeferCleanup(func() {
 				err := ApiClient.VirtualMachine(testNamespace).Delete(vm.Name, &metav1.DeleteOptions{})
 				if err != nil && !errors.IsNotFound(err) {
 					Expect(err).ToNot(HaveOccurred())
 				}
-				Eventually(func() bool {
-					_, err := ApiClient.VirtualMachineInstance(testNamespace).Get(vm.Name, &metav1.GetOptions{})
-					return errors.IsNotFound(err)
-				}, 10*time.Minute, time.Second).Should(BeTrue())
-
-				// Try to access the VNC
-				dialer.Subprotocols = []string{subprotocolPrefix + vncToken}
-
-				vncUrl := fmt.Sprintf(vncUrlTemplate, vm.Name)
-				conn, response, err := dialer.Dial(vncUrl, nil)
-				if conn != nil {
-					Expect(conn.Close()).To(Succeed())
-					Fail("Websocket connection should not succeed.")
-				}
-				Expect(err).To(MatchError(websocket.ErrBadHandshake))
-
-				Expect(response.StatusCode).To(Equal(http.StatusNotFound))
-				Expect(io.ReadAll(response.Body)).To(ContainSubstring("VirtualMachineInstance does no exist"))
 			})
 
-			It("should proxy VNC connection", func() {
-				dialer.Subprotocols = []string{subprotocolPrefix + vncToken, "base64.binary.k8s.io"}
+			tokenUrl := fmt.Sprintf(tokenUrlTemplate, vm.Name)
+			code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(code).To(Equal(http.StatusOK))
 
-				vncUrl := fmt.Sprintf(vncUrlTemplate, vm.Name)
-				conn, _, err := dialer.Dial(vncUrl, nil)
-				Expect(err).ToNot(HaveOccurred())
+			tokenResponse := &api.TokenResponse{}
+			Expect(json.Unmarshal(body, tokenResponse)).To(Succeed())
+			Expect(tokenResponse.Token).ToNot(BeEmpty())
 
-				done := make(chan struct{})
-				streamer := kubecli.NewWebsocketStreamer(conn, done)
-				defer close(done)
+			tokenReview := &authnv1.TokenReview{
+				Spec: authnv1.TokenReviewSpec{
+					Token: tokenResponse.Token,
+				},
+			}
 
-				vncClient, err := vnc.Client(streamer.AsConn(), &vnc.ClientConfig{})
-				Expect(err).ToNot(HaveOccurred())
-				Expect(vncClient.Close()).To(Succeed())
-			})
+			tokenReview, err = ApiClient.AuthenticationV1().TokenReviews().Create(context.TODO(), tokenReview, metav1.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(tokenReview.Status.Error).To(BeEmpty())
+			Expect(tokenReview.Status.Authenticated).To(BeTrue())
 
-			It("should fail if token is expired", func() {
-				// Get the vnc token
-				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vm.Name)
-				code, tokenBody, err := httpGet(tokenUrl+"?duration=1s", saToken, TestHttpClient)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(code).To(Equal(http.StatusOK))
+			extras := map[string]authzv1.ExtraValue{}
+			for key, value := range tokenReview.Status.User.Extra {
+				extras[key] = authzv1.ExtraValue(value)
+			}
 
-				tokenResponseObj := &api.TokenResponse{}
-				Expect(json.Unmarshal(tokenBody, tokenResponseObj)).To(Succeed())
-				Expect(tokenResponseObj.Token).ToNot(BeEmpty())
+			accessReview := &authzv1.SubjectAccessReview{
+				Spec: authzv1.SubjectAccessReviewSpec{
+					ResourceAttributes: &authzv1.ResourceAttributes{
+						Namespace:   testNamespace,
+						Name:        vm.Name,
+						Verb:        "get",
+						Group:       kubevirtcorev1.SubresourceGroupName,
+						Version:     "v1",
+						Resource:    "virtualmachineinstances",
+						Subresource: "vnc",
+					},
+					User:   tokenReview.Status.User.Username,
+					Groups: tokenReview.Status.User.Groups,
+					Extra:  extras,
+					UID:    tokenReview.Status.User.UID,
+				},
+			}
 
-				vncTokenWithTimeout := tokenResponseObj.Token
+			accessReview, err = ApiClient.AuthorizationV1().SubjectAccessReviews().Create(context.TODO(), accessReview, metav1.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
 
-				// Wait until the token expires
-				time.Sleep(2 * time.Second)
-
-				dialer.Subprotocols = []string{subprotocolPrefix + vncTokenWithTimeout}
-
-				vncUrl := fmt.Sprintf(vncUrlTemplate, vm.Name)
-				conn, response, err := dialer.Dial(vncUrl, nil)
-				if conn != nil {
-					_ = conn.Close()
-					Fail("Websocket connection should not succeed.")
-				}
-				Expect(err).To(MatchError(websocket.ErrBadHandshake))
-
-				Expect(response.StatusCode).To(Equal(http.StatusUnauthorized))
-				Expect(io.ReadAll(response.Body)).To(ContainSubstring("request is not authenticated"))
-			})
+			Expect(accessReview.Status.Allowed).To(BeTrue())
 		})
 	})
 })
-
-func httpGet(url string, authToken string, client *http.Client) (int, []byte, error) {
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	if authToken != "" {
-		request.Header.Set("Authorization", "Bearer "+authToken)
-	}
-
-	response, err := client.Do(request)
-	if err != nil {
-		return 0, nil, err
-	}
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return 0, nil, err
-	}
-	return response.StatusCode, body, nil
-}
 
 func testVm(namePrefix string) *kubevirtcorev1.VirtualMachine {
 	const (

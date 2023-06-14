@@ -8,7 +8,6 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.4.3
 	github.com/golang/mock v1.5.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/mitchellh/go-vnc v0.0.0-20150629162542-723ed9867aed
 	github.com/onsi/ginkgo/v2 v2.6.1
 	github.com/onsi/gomega v1.24.2
 	github.com/openshift/api v0.0.0-20220504105152-6f735e7109c8
