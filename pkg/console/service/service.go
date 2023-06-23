@@ -56,8 +56,11 @@ type service struct {
 }
 
 func (s *service) TokenHandler(request *restful.Request, response *restful.Response) {
-	namespace := request.PathParameter("namespace")
-	name := request.PathParameter("name")
+	params, err := readTokenRequestParameters(request)
+	if err != nil {
+		_ = response.WriteError(http.StatusBadRequest, err)
+		return
+	}
 
 	authToken := getAuthToken(request)
 	if authToken == "" {
@@ -65,14 +68,14 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	err := s.checkVncRbac(request.Request.Context(), authToken, name, namespace)
+	err = s.checkVncRbac(request.Request.Context(), authToken, params.name, params.namespace)
 	if err != nil {
 		_ = response.WriteError(http.StatusUnauthorized, err)
 		return
 	}
 
 	vmiMeta, err := s.metadataClient.Resource(kubevirtv1.GroupVersion.WithResource("virtualmachineinstances")).
-		Namespace(namespace).Get(request.Request.Context(), name, metav1.GetOptions{})
+		Namespace(params.namespace).Get(request.Request.Context(), params.name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachineInstance does no exist: %w", err))
@@ -82,23 +85,12 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	duration := 10 * time.Minute
-	durationParam := request.QueryParameter("duration")
-	if durationParam != "" {
-		var err error
-		duration, err = time.ParseDuration(durationParam)
-		if err != nil {
-			_ = response.WriteError(http.StatusBadRequest, fmt.Errorf("failed to parse duration: %w", err))
-			return
-		}
-	}
-
 	claims := &token.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(params.duration)),
 		},
-		Name:      name,
-		Namespace: namespace,
+		Name:      params.name,
+		Namespace: params.namespace,
 		UID:       string(vmiMeta.UID),
 	}
 
@@ -294,4 +286,34 @@ func getAuthTokenWebsocket(request *restful.Request) string {
 		}
 	}
 	return ""
+}
+
+type tokenRequestParams struct {
+	namespace string
+	name      string
+	duration  time.Duration
+}
+
+func readTokenRequestParameters(request *restful.Request) (*tokenRequestParams, error) {
+	namespace := request.PathParameter("namespace")
+	name := request.PathParameter("name")
+	if namespace == "" || name == "" {
+		return nil, fmt.Errorf("namespace and name parameters are required")
+	}
+
+	duration := 10 * time.Minute
+	durationParam := request.QueryParameter("duration")
+	if durationParam != "" {
+		var err error
+		duration, err = time.ParseDuration(durationParam)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse duration: %w", err)
+		}
+	}
+
+	return &tokenRequestParams{
+		namespace: namespace,
+		name:      name,
+		duration:  duration,
+	}, nil
 }
