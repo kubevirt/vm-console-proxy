@@ -1,8 +1,8 @@
 # VM Console Proxy
 
-Proxy that provides access to the VNC console of a Kubevirt VM.
+It provides an endpoint to generate time limited tokens that are then used to access VNC.
 
-It can generate time limited tokens that are then used to access VNC.
+**Note:** This project no longer provides VNC proxy functionality, so the project name should be changed in the future.
 
 ## Installation
 
@@ -11,10 +11,9 @@ The [SSP operator](https://github.com/kubevirt/ssp-operator) can be configured t
 a Route to expose it to the external network.
 
 ### Without SSP operator
-VM Console Proxy needs to be deployed in the same namespace as KubeVirt.
 To deploy the latest version, use the following command:
 ```bash
-kubectl apply -n ${KUBEVIRT_NAMESPACE} -f "https://github.com/kubevirt/vm-console-proxy/releases/latest/download/vm-console-proxy.yaml"
+kubectl apply -f "https://github.com/kubevirt/vm-console-proxy/releases/latest/download/vm-console-proxy.yaml"
 ```
 
 ## API
@@ -32,7 +31,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: vm-console
-  namespace: kubevirt
+  namespace: ${VM_CONSOLE_PROXY_NAMESPACE}
 spec:
   rules:
     - host: ${HOSTNAME}
