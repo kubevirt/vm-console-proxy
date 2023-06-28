@@ -134,7 +134,6 @@
             .onclick = sendCtrlAltDel;
 
         // Read parameters specified in the URL query string
-        // By default, use the host and port of server that served this file
         const host = readQueryVariable('host');
         let port = readQueryVariable('port');
 
@@ -153,7 +152,7 @@
         if(port) {
             url += ':' + port;
         }
-        url += '/api/v1alpha1/' + vmNamespace + '/' + vmName + '/vnc'
+        url += '/apis/subresources.kubevirt.io/v1/namespaces/' + vmNamespace + '/virtualmachineinstances/'+ vmName +'/vnc'
 
         // Creating a new RFB object will start a new connection
         rfb = new RFB(
