@@ -148,6 +148,12 @@ var _ = Describe("TLS config", func() {
 			}, 1*time.Minute, time.Second).Should(Succeed())
 		})
 	})
+
+	It("should fail if client certificate is not provided", func() {
+		_, _, err := httpGet("https://"+testHostname+"/apis/"+api.Group+"/"+api.Version+"/", "", PortForwardClient)
+		Expect(err).To(MatchError(ContainSubstring("bad certificate")))
+	})
+
 })
 
 func getTlsConnectionState() (tls.ConnectionState, error) {

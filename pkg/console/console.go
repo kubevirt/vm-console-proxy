@@ -6,6 +6,9 @@ import (
 	"net/http"
 
 	"github.com/emicklei/go-restful/v3"
+	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
@@ -15,8 +18,6 @@ import (
 )
 
 const (
-	urlPathPrefix = "api/v1alpha1/{namespace:[a-z0-9][a-z0-9\\-]*}/{name:[a-z0-9][a-z0-9\\-]*}"
-
 	defaultAddress = "0.0.0.0"
 	defaultPort    = 8768
 
@@ -34,11 +35,18 @@ func Run() error {
 		return err
 	}
 
+	authConfigReader, err := authConfig.CreateReader(cli.CoreV1().RESTClient())
+	if err != nil {
+		return err
+	}
+	defer authConfigReader.Stop()
+
 	watch := filewatch.New()
 
 	tlsConfigWatch := tlsconfig.NewWatch(
 		configDir, TlsProfileFile,
 		serviceCertDir, certName, keyName,
+		authConfigReader,
 	)
 	tlsConfigWatch.Reload()
 
@@ -54,13 +62,9 @@ func Run() error {
 		}
 	}()
 
-	handlers := service.NewService(cli)
+	handlers := service.NewService(cli, authConfigReader)
 
 	restful.Add(webService(handlers))
-	cors := restful.CrossOriginResourceSharing{
-		AllowedHeaders: []string{"Authorization"},
-	}
-	restful.Filter(cors.Filter)
 	restful.Filter(restful.OPTIONSFilter())
 
 	server := &http.Server{
@@ -83,13 +87,29 @@ func Run() error {
 
 func webService(handlers service.Service) *restful.WebService {
 	ws := new(restful.WebService)
-	ws.Route(ws.GET(urlPathPrefix + "/token").
+
+	ws.Path("/apis/" + api.Group + "/" + api.Version)
+
+	ws.Route(ws.GET("/namespaces/{namespace:[a-z0-9][a-z0-9\\-]*}/virtualmachines/{name:[a-z0-9][a-z0-9\\-]*}/vnc").
 		To(handlers.TokenHandler).
 		Doc("generate token").
 		Operation("token").
 		Param(ws.PathParameter("namespace", "namespace").Required(true)).
 		Param(ws.PathParameter("name", "name").Required(true)).
 		Param(ws.QueryParameter("duration", "duration")))
+
+	// This endpoint is called by the API Server to get available resources.
+	// We can return an empty list here, it does not block the functionality.
+	ws.Route(ws.GET("/").
+		To(func(request *restful.Request, response *restful.Response) {
+			list := &metav1.APIResourceList{
+				TypeMeta: metav1.TypeMeta{
+					Kind: "APIResourceList",
+				},
+				APIResources: []metav1.APIResource{},
+			}
+			response.WriteAsJson(list)
+		}))
 
 	return ws
 }

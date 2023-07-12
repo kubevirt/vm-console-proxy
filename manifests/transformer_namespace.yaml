@@ -1,0 +1,7 @@
+apiVersion: builtin
+kind: NamespaceTransformer
+metadata:
+  name: namespace-transformer
+  namespace: kubevirt
+setRoleBindingSubjects: allServiceAccounts
+unsetOnly: true
