@@ -84,12 +84,5 @@ func webService(handlers service.Service) *restful.WebService {
 		Param(ws.PathParameter("name", "name").Required(true)).
 		Param(ws.QueryParameter("duration", "duration")))
 
-	ws.Route(ws.GET(urlPathPrefix + "/vnc").
-		To(handlers.VncHandler).
-		Doc("vnc connection").
-		Operation("vnc").
-		Param(ws.PathParameter("namespace", "namespace").Required(true)).
-		Param(ws.PathParameter("name", "name").Required(true)))
-
 	return ws
 }

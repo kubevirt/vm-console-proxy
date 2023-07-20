@@ -35,7 +35,6 @@ const (
 
 type Service interface {
 	TokenHandler(request *restful.Request, response *restful.Response)
-	VncHandler(request *restful.Request, response *restful.Response)
 }
 
 func NewService(kubevirtClient kubecli.KubevirtClient) Service {
@@ -93,12 +92,6 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 	_ = response.WriteAsJson(&v1alpha1.TokenResponse{
 		Token: token,
 	})
-}
-
-func (s *service) VncHandler(_ *restful.Request, response *restful.Response) {
-	_ = response.WriteError(http.StatusGone, fmt.Errorf(
-		"/vnc endpoint was removed",
-	))
 }
 
 func (s *service) checkVncRbac(ctx context.Context, rbacToken, vmiName, vmiNamespace string) error {

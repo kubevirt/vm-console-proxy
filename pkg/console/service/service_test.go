@@ -31,6 +31,9 @@ var _ = Describe("Service", func() {
 	const (
 		testNamespace = "test-namespace"
 		testName      = "test-name"
+		testToken     = "test-token-value"
+
+		authorizationHeader = "Authorization"
 	)
 
 	var (
@@ -90,223 +93,205 @@ var _ = Describe("Service", func() {
 		recorder = httptest.NewRecorder()
 		response = restful.NewResponse(recorder)
 		response.SetRequestAccepts(restful.MIME_JSON)
+
+		const validToken = "test-auth-token"
+		apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			tokenReview := createAction.GetObject().(*authnv1.TokenReview)
+			tokenReview.Status.Authenticated = true
+			return true, tokenReview, nil
+		})
+
+		apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
+			sar.Status.Allowed = true
+			return true, sar, nil
+		})
+
+		apiClient.Fake.PrependReactor("create", "serviceaccounts/token", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			tokenRequest := createAction.GetObject().(*authnv1.TokenRequest)
+			tokenRequest.Status.Token = testToken
+			return true, tokenRequest, nil
+		})
+
+		request.Request.Header.Set(authorizationHeader, "Bearer "+validToken)
+		// Using a dummy URL, so tests don't panic
+		requestUrl, err := url.Parse("example.org/api")
+		Expect(err).ToNot(HaveOccurred())
+		request.Request.URL = requestUrl
 	})
 
-	Context("TokenHandler", func() {
+	It("should fail if namespace is empty", func() {
+		delete(request.PathParameters(), "namespace")
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusBadRequest))
+		Expect(recorder.Body.String()).To(ContainSubstring("namespace and name parameters are required"))
+	})
+
+	It("should fail if name is empty", func() {
+		delete(request.PathParameters(), "name")
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusBadRequest))
+		Expect(recorder.Body.String()).To(ContainSubstring("namespace and name parameters are required"))
+	})
+
+	It("should fail if no Authorization header is provided", func() {
+		request.Request.Header.Del(authorizationHeader)
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+		Expect(recorder.Body.String()).To(Equal("authenticating token cannot be empty"))
+	})
+
+	It("should fail if Authorization header is not Bearer", func() {
+		request.Request.Header.Set(authorizationHeader, "Unknown auth header format")
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+		Expect(recorder.Body.String()).To(Equal("authenticating token cannot be empty"))
+	})
+
+	It("should fail if authorization token is invalid", func() {
+		apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			tokenReview := createAction.GetObject().(*authnv1.TokenReview)
+			tokenReview.Status.Authenticated = false
+			return true, tokenReview, nil
+		})
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+		Expect(recorder.Body.String()).To(Equal("token is not authenticated"))
+	})
+
+	It("should fail if authorization token does not have permission to access virtualmachineinstances/vnc", func() {
+		apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
+			sar.Status.Allowed = false
+			return true, sar, nil
+		})
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+		Expect(recorder.Body.String()).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
+	})
+
+	It("should pass user info from TokenReview to SubjectAccessReview", func() {
 		const (
-			testToken           = "test-token-value"
-			authorizationHeader = "Authorization"
+			userName = "user-name"
+			userUid  = "user-uid"
 		)
 
-		BeforeEach(func() {
-			const validToken = "test-auth-token"
-			apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				createAction := action.(k8stesting.CreateAction)
-				tokenReview := createAction.GetObject().(*authnv1.TokenReview)
-				tokenReview.Status.Authenticated = true
-				return true, tokenReview, nil
-			})
+		var (
+			groups = []string{"group1", "group2"}
+		)
 
-			apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				createAction := action.(k8stesting.CreateAction)
-				sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
-				sar.Status.Allowed = true
-				return true, sar, nil
-			})
-
-			apiClient.Fake.PrependReactor("create", "serviceaccounts/token", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				createAction := action.(k8stesting.CreateAction)
-				tokenRequest := createAction.GetObject().(*authnv1.TokenRequest)
-				tokenRequest.Status.Token = testToken
-				return true, tokenRequest, nil
-			})
-
-			request.Request.Header.Set(authorizationHeader, "Bearer "+validToken)
-			// Using a dummy URL, so tests don't panic
-			requestUrl, err := url.Parse("example.org/api")
-			Expect(err).ToNot(HaveOccurred())
-			request.Request.URL = requestUrl
+		apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			tokenReview := createAction.GetObject().(*authnv1.TokenReview)
+			tokenReview.Status.Authenticated = true
+			tokenReview.Status.User = authnv1.UserInfo{
+				Username: userName,
+				UID:      userUid,
+				Groups:   groups,
+			}
+			return true, tokenReview, nil
 		})
 
-		It("should fail if namespace is empty", func() {
-			delete(request.PathParameters(), "namespace")
+		apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
 
-			testService.TokenHandler(request, response)
+			Expect(sar.Spec.User).To(Equal(userName))
+			Expect(sar.Spec.UID).To(Equal(userUid))
+			Expect(sar.Spec.Groups).To(Equal(groups))
 
-			Expect(recorder.Code).To(Equal(http.StatusBadRequest))
-			Expect(recorder.Body.String()).To(ContainSubstring("namespace and name parameters are required"))
+			sar.Status.Allowed = true
+			return true, sar, nil
 		})
 
-		It("should fail if name is empty", func() {
-			delete(request.PathParameters(), "name")
-
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusBadRequest))
-			Expect(recorder.Body.String()).To(ContainSubstring("namespace and name parameters are required"))
-		})
-
-		It("should fail if no Authorization header is provided", func() {
-			request.Request.Header.Del(authorizationHeader)
-
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-			Expect(recorder.Body.String()).To(Equal("authenticating token cannot be empty"))
-		})
-
-		It("should fail if Authorization header is not Bearer", func() {
-			request.Request.Header.Set(authorizationHeader, "Unknown auth header format")
-
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-			Expect(recorder.Body.String()).To(Equal("authenticating token cannot be empty"))
-		})
-
-		It("should fail if authorization token is invalid", func() {
-			apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				createAction := action.(k8stesting.CreateAction)
-				tokenReview := createAction.GetObject().(*authnv1.TokenReview)
-				tokenReview.Status.Authenticated = false
-				return true, tokenReview, nil
-			})
-
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-			Expect(recorder.Body.String()).To(Equal("token is not authenticated"))
-		})
-
-		It("should fail if authorization token does not have permission to access virtualmachineinstances/vnc", func() {
-			apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				createAction := action.(k8stesting.CreateAction)
-				sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
-				sar.Status.Allowed = false
-				return true, sar, nil
-			})
-
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-			Expect(recorder.Body.String()).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
-		})
-
-		It("should pass user info from TokenReview to SubjectAccessReview", func() {
-			const (
-				userName = "user-name"
-				userUid  = "user-uid"
-			)
-
-			var (
-				groups = []string{"group1", "group2"}
-			)
-
-			apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				createAction := action.(k8stesting.CreateAction)
-				tokenReview := createAction.GetObject().(*authnv1.TokenReview)
-				tokenReview.Status.Authenticated = true
-				tokenReview.Status.User = authnv1.UserInfo{
-					Username: userName,
-					UID:      userUid,
-					Groups:   groups,
-				}
-				return true, tokenReview, nil
-			})
-
-			apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				createAction := action.(k8stesting.CreateAction)
-				sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
-
-				Expect(sar.Spec.User).To(Equal(userName))
-				Expect(sar.Spec.UID).To(Equal(userUid))
-				Expect(sar.Spec.Groups).To(Equal(groups))
-
-				sar.Status.Allowed = true
-				return true, sar, nil
-			})
-
-			testService.TokenHandler(request, response)
-		})
-
-		It("should fail if VM does not exist", func() {
-			testVm = nil
-
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusNotFound))
-			Expect(recorder.Body.String()).To(ContainSubstring("VirtualMachine does not exist"))
-		})
-
-		It("should return token", func() {
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusOK))
-
-			tokenResponse := &api.TokenResponse{}
-			Expect(json.NewDecoder(recorder.Body).Decode(tokenResponse)).To(Succeed())
-
-			Expect(tokenResponse.Token).To(Equal(testToken))
-		})
-
-		It("should fail if duration parameter fails to parse", func() {
-			urlWithDuration, err := url.Parse("example.org/api?duration=this-fails-to-parse")
-			Expect(err).ToNot(HaveOccurred())
-			request.Request.URL = urlWithDuration
-
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusBadRequest))
-			Expect(recorder.Body.String()).To(ContainSubstring("failed to parse duration"))
-		})
-
-		It("should return token with specified duration", func() {
-			apiClient.Fake.PrependReactor("create", "serviceaccounts/token", func(action k8stesting.Action) (bool, runtime.Object, error) {
-				createAction := action.(k8stesting.CreateAction)
-				tokenRequest := createAction.GetObject().(*authnv1.TokenRequest)
-				Expect(*tokenRequest.Spec.ExpirationSeconds).To(Equal(int64(24 * 3600)))
-
-				tokenRequest.Status.Token = testToken
-				return true, tokenRequest, nil
-			})
-
-			urlWithDuration, err := url.Parse("example.org/api?duration=24h")
-			Expect(err).ToNot(HaveOccurred())
-			request.Request.URL = urlWithDuration
-
-			testService.TokenHandler(request, response)
-
-			Expect(recorder.Code).To(Equal(http.StatusOK))
-
-			tokenResponse := &api.TokenResponse{}
-			Expect(json.NewDecoder(recorder.Body).Decode(tokenResponse)).To(Succeed())
-			Expect(tokenResponse.Token).To(Equal(testToken))
-		})
-
-		It("should create resources", func() {
-			const resourceName = testName + "-vnc-access"
-
-			testService.TokenHandler(request, response)
-			Expect(recorder.Code).To(Equal(http.StatusOK))
-
-			_, err := apiClient.CoreV1().ServiceAccounts(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
-			Expect(err).ToNot(HaveOccurred())
-
-			_, err = apiClient.RbacV1().Roles(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
-			Expect(err).ToNot(HaveOccurred())
-
-			_, err = apiClient.RbacV1().RoleBindings(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
-			Expect(err).ToNot(HaveOccurred())
-		})
+		testService.TokenHandler(request, response)
 	})
 
-	Context("VncHandler", func() {
-		It("should return an error when called", func() {
-			testService.VncHandler(request, response)
+	It("should fail if VM does not exist", func() {
+		testVm = nil
 
-			Expect(recorder.Code).To(Equal(http.StatusGone))
-			Expect(recorder.Body.String()).To(Equal("/vnc endpoint was removed"))
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusNotFound))
+		Expect(recorder.Body.String()).To(ContainSubstring("VirtualMachine does not exist"))
+	})
+
+	It("should return token", func() {
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusOK))
+
+		tokenResponse := &api.TokenResponse{}
+		Expect(json.NewDecoder(recorder.Body).Decode(tokenResponse)).To(Succeed())
+
+		Expect(tokenResponse.Token).To(Equal(testToken))
+	})
+
+	It("should fail if duration parameter fails to parse", func() {
+		urlWithDuration, err := url.Parse("example.org/api?duration=this-fails-to-parse")
+		Expect(err).ToNot(HaveOccurred())
+		request.Request.URL = urlWithDuration
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusBadRequest))
+		Expect(recorder.Body.String()).To(ContainSubstring("failed to parse duration"))
+	})
+
+	It("should return token with specified duration", func() {
+		apiClient.Fake.PrependReactor("create", "serviceaccounts/token", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			tokenRequest := createAction.GetObject().(*authnv1.TokenRequest)
+			Expect(*tokenRequest.Spec.ExpirationSeconds).To(Equal(int64(24 * 3600)))
+
+			tokenRequest.Status.Token = testToken
+			return true, tokenRequest, nil
 		})
+
+		urlWithDuration, err := url.Parse("example.org/api?duration=24h")
+		Expect(err).ToNot(HaveOccurred())
+		request.Request.URL = urlWithDuration
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusOK))
+
+		tokenResponse := &api.TokenResponse{}
+		Expect(json.NewDecoder(recorder.Body).Decode(tokenResponse)).To(Succeed())
+		Expect(tokenResponse.Token).To(Equal(testToken))
+	})
+
+	It("should create resources", func() {
+		const resourceName = testName + "-vnc-access"
+
+		testService.TokenHandler(request, response)
+		Expect(recorder.Code).To(Equal(http.StatusOK))
+
+		_, err := apiClient.CoreV1().ServiceAccounts(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = apiClient.RbacV1().Roles(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = apiClient.RbacV1().RoleBindings(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+		Expect(err).ToNot(HaveOccurred())
 	})
 })
 

@@ -2,10 +2,8 @@ package tests
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -14,7 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/gorilla/websocket"
 	authnv1 "k8s.io/api/authentication/v1"
 	authzv1 "k8s.io/api/authorization/v1"
 	core "k8s.io/api/core/v1"
@@ -147,39 +144,6 @@ var _ = Describe("Kubevirt proxy", func() {
 				Expect(expireTime.Sub(expectedTime).Abs()).
 					To(BeNumerically("<=", 5*time.Second))
 			})
-		})
-	})
-
-	Context("/vnc endpoint", func() {
-		const (
-			wssUrlBase  = "wss://" + urlBase
-			vncEndpoint = "vnc"
-
-			vncUrlTemplate = wssUrlBase + "/" + testNamespace + "/%s/" + vncEndpoint
-		)
-
-		var (
-			dialer *websocket.Dialer
-		)
-
-		BeforeEach(func() {
-			dialer = &websocket.Dialer{
-				NetDialContext:  PortForwardDial,
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-		})
-
-		It("should return an error when calling the /vnc endpoint", func() {
-			vncUrl := fmt.Sprintf(vncUrlTemplate, "vm-1")
-			conn, response, err := dialer.Dial(vncUrl, nil)
-			if conn != nil {
-				_ = conn.Close()
-				Fail("Websocket connection should not succeed.")
-			}
-			Expect(err).To(MatchError(websocket.ErrBadHandshake))
-
-			Expect(response.StatusCode).To(Equal(http.StatusGone))
-			Expect(io.ReadAll(response.Body)).To(ContainSubstring("/vnc endpoint was removed"))
 		})
 	})
 
