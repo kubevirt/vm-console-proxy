@@ -3,24 +3,22 @@ package tests
 import (
 	"context"
 	"crypto/tls"
-	"sigs.k8s.io/yaml"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
 	ocpconfigv1 "github.com/openshift/api/config/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubevirt/vm-console-proxy/pkg/console"
 )
 
 var _ = Describe("TLS config", func() {
-	const (
-		configMapName = "vm-console-proxy"
-	)
 
 	It("should read config from ConfigMap", func() {
 		Eventually(func(g Gomega) {
@@ -43,37 +41,8 @@ var _ = Describe("TLS config", func() {
 	})
 
 	Context("with changed ConfigMap", func() {
-		BeforeEach(func() {
-			originalConfig, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
-			Expect(err).ToNot(HaveOccurred())
-			DeferCleanup(func() {
-				Eventually(func() error {
-					foundConfig, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
-					if errors.IsNotFound(err) {
-						newMeta := metav1.ObjectMeta{
-							Name:                       originalConfig.Name,
-							Namespace:                  originalConfig.Namespace,
-							DeletionGracePeriodSeconds: originalConfig.DeletionGracePeriodSeconds,
-							Labels:                     originalConfig.Labels,
-							Annotations:                originalConfig.Annotations,
-							OwnerReferences:            originalConfig.OwnerReferences,
-							Finalizers:                 originalConfig.Finalizers,
-						}
-						originalConfig.ObjectMeta = newMeta
-						_, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Create(context.TODO(), originalConfig, metav1.CreateOptions{})
-						return err
-					}
-					if err != nil {
-						return err
-					}
-
-					foundConfig.Data = originalConfig.Data
-					foundConfig.BinaryData = originalConfig.BinaryData
-
-					_, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Update(context.TODO(), foundConfig, metav1.UpdateOptions{})
-					return err
-				}, 10*time.Second, time.Second).Should(Succeed())
-			})
+		AfterEach(func() {
+			RevertToOriginalConfigMap()
 		})
 
 		It("should reload config at runtime", func() {
@@ -85,17 +54,9 @@ var _ = Describe("TLS config", func() {
 			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 			Expect(err).ToNot(HaveOccurred())
 
-			Eventually(func() error {
-				foundConfig, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
-				if err != nil {
-					return err
-				}
-
-				foundConfig.Data[console.TlsProfileFile] = string(tlsProfileYaml)
-
-				_, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Update(context.TODO(), foundConfig, metav1.UpdateOptions{})
-				return err
-			}, 1*time.Minute, time.Second).Should(Succeed())
+			UpdateConfigMap(func(configMap *core.ConfigMap) {
+				configMap.Data[console.TlsProfileFile] = string(tlsProfileYaml)
+			})
 
 			Eventually(func(g Gomega) {
 				connState, err := getTlsConnectionState()

@@ -7,13 +7,11 @@ import (
 	"path/filepath"
 
 	"github.com/emicklei/go-restful/v3"
-	"k8s.io/client-go/metadata"
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
-	"github.com/kubevirt/vm-console-proxy/pkg/console/dialer"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/service"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/tlsconfig"
-	"github.com/kubevirt/vm-console-proxy/pkg/token"
 )
 
 const (
@@ -35,12 +33,6 @@ func Run() error {
 		return err
 	}
 
-	metadataClient, err := metadata.NewForConfig(cli.Config())
-	if err != nil {
-		return err
-
-	}
-
 	tlsConfigWatch := tlsconfig.NewWatch(
 		filepath.Join(configDir, TlsProfileFile),
 		serviceCertPath,
@@ -55,23 +47,7 @@ func Run() error {
 		log.Log.Errorf("Error running TLS config watch: %s", err)
 	}()
 
-	tokenKeyCache := token.NewKeyCache()
-	handlers := &service{
-		kubevirtClient:  cli,
-		metadataClient:  metadataClient,
-		websocketDialer: dialer.New(),
-		getTokenSigningKey: func() ([]byte, error) {
-			tlsConfig, err := tlsConfigWatch.GetConfig()
-			if err != nil {
-				return nil, err
-			}
-			tokenKey, err := tokenKeyCache.Get(tlsConfig.Certificates[0].PrivateKey)
-			if err != nil {
-				return nil, err
-			}
-			return tokenKey, nil
-		},
-	}
+	handlers := service.NewService(cli)
 
 	restful.Add(webService(handlers))
 	cors := restful.CrossOriginResourceSharing{
@@ -98,7 +74,7 @@ func Run() error {
 	return server.ListenAndServeTLS("", "")
 }
 
-func webService(handlers *service) *restful.WebService {
+func webService(handlers service.Service) *restful.WebService {
 	ws := new(restful.WebService)
 	ws.Route(ws.GET(urlPathPrefix + "/token").
 		To(handlers.TokenHandler).
@@ -107,13 +83,6 @@ func webService(handlers *service) *restful.WebService {
 		Param(ws.PathParameter("namespace", "namespace").Required(true)).
 		Param(ws.PathParameter("name", "name").Required(true)).
 		Param(ws.QueryParameter("duration", "duration")))
-
-	ws.Route(ws.GET(urlPathPrefix + "/vnc").
-		To(handlers.VncHandler).
-		Doc("vnc connection").
-		Operation("vnc").
-		Param(ws.PathParameter("namespace", "namespace").Required(true)).
-		Param(ws.PathParameter("name", "name").Required(true)))
 
 	return ws
 }
