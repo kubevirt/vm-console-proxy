@@ -5,11 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 
-	"github.com/fsnotify/fsnotify"
 	ocpconfigv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/crypto"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -17,34 +16,37 @@ import (
 	"kubevirt.io/client-go/log"
 
 	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
 )
 
 type Watch interface {
-	Run(done <-chan struct{}) error
+	AddToFilewatch(watch filewatch.Watch) error
 	Reload()
-	IsRunning() bool
-
 	GetConfig() (*tls.Config, error)
 }
 
-func NewWatch(tlsProfilePath string, certPath string, keyPath string) Watch {
+func NewWatch(configDir, tlsProfileFileName, certAndKeyDir, certsName, keyName string) Watch {
 	return &watch{
-		tlsProfilePath:  tlsProfilePath,
-		tlsProfileError: fmt.Errorf("tls profile not loaded"),
+		configDir:          configDir,
+		tlsProfileFileName: tlsProfileFileName,
+		tlsProfileError:    fmt.Errorf("tls profile not loaded"),
 
-		certsPath: certPath,
-		keyPath:   keyPath,
-		certError: fmt.Errorf("certificate not loaded"),
+		certAndKeyDir: certAndKeyDir,
+		certsName:     certsName,
+		keyName:       keyName,
+		certError:     fmt.Errorf("certificate not loaded"),
 	}
 }
 
 type watch struct {
-	running atomic.Bool
-	lock    sync.RWMutex
+	lock sync.RWMutex
 
-	tlsProfilePath string
-	certsPath      string
-	keyPath        string
+	configDir          string
+	tlsProfileFileName string
+
+	certAndKeyDir string
+	certsName     string
+	keyName       string
 
 	tlsProfileError error
 	ciphers         []uint16
@@ -54,34 +56,11 @@ type watch struct {
 	certError   error
 }
 
-func (w *watch) Run(done <-chan struct{}) error {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("could not create fsnotify.Watcher: %w", err)
+func (w *watch) AddToFilewatch(watch filewatch.Watch) error {
+	if err := watch.Add(w.configDir, w.reloadTlsProfile); err != nil {
+		return err
 	}
-	// watcher.Close() never returns an error
-	defer func() { _ = watcher.Close() }()
-
-	err = watcher.Add(w.tlsProfilePath)
-	if err != nil {
-		return fmt.Errorf("could not add watch: %w", err)
-	}
-
-	err = watcher.Add(w.certsPath)
-	if err != nil {
-		return fmt.Errorf("failed to watch Certificate: %w", err)
-	}
-
-	err = watcher.Add(w.keyPath)
-	if err != nil {
-		return fmt.Errorf("failed to watch Certificate key: %w", err)
-	}
-
-	return w.processEvents(watcher, done)
-}
-
-func (w *watch) IsRunning() bool {
-	return w.running.Load()
+	return watch.Add(w.certAndKeyDir, w.reloadCertificate)
 }
 
 func (w *watch) Reload() {
@@ -107,54 +86,12 @@ func (w *watch) GetConfig() (*tls.Config, error) {
 	}, nil
 }
 
-func (w *watch) processEvents(watcher *fsnotify.Watcher, done <-chan struct{}) error {
-	w.running.Store(true)
-	defer w.running.Store(false)
-
-	for {
-		select {
-		case <-done:
-			return nil
-
-		case event, ok := <-watcher.Events:
-			if !ok {
-				return nil
-			}
-			w.handleEvent(event)
-
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (w *watch) handleEvent(event fsnotify.Event) {
-	const modificationEvents = fsnotify.Create | fsnotify.Write | fsnotify.Remove
-	if event.Op&modificationEvents == 0 {
-		return
-	}
-
-	switch {
-	case strings.HasPrefix(w.tlsProfilePath, event.Name):
-		w.reloadTlsProfile()
-	case strings.HasPrefix(w.certsPath, event.Name):
-		w.reloadCertificate()
-	case strings.HasPrefix(w.keyPath, event.Name):
-		w.reloadCertificate()
-	}
-}
-
 func (w *watch) reloadTlsProfile() {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	w.tlsProfileError = nil
 
-	ciphers, minVersion, err := loadCipherSuitesAndMinVersion(w.tlsProfilePath)
+	ciphers, minVersion, err := loadCipherSuitesAndMinVersion(filepath.Join(w.configDir, w.tlsProfileFileName))
 	if errors.Is(err, os.ErrNotExist) {
 		// Config file does not exist, using zero values for default
 		w.ciphers = nil
@@ -186,7 +123,10 @@ func (w *watch) reloadCertificate() {
 	defer w.lock.Unlock()
 	w.certError = nil
 
-	certificate, err := LoadCertificates(w.certsPath, w.keyPath)
+	certificate, err := LoadCertificates(
+		filepath.Join(w.certAndKeyDir, w.certsName),
+		filepath.Join(w.certAndKeyDir, w.keyName),
+	)
 	if err != nil {
 		w.certError = err
 		return

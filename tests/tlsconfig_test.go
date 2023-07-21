@@ -81,6 +81,72 @@ var _ = Describe("TLS config", func() {
 				Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS10))
 			}, 1*time.Minute, time.Second).Should(Succeed())
 		})
+
+		It("should reload config if file recreated after deletion", func() {
+			Eventually(func() error {
+				foundConfig, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+
+				delete(foundConfig.Data, console.TlsProfileFile)
+
+				_, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Update(context.TODO(), foundConfig, metav1.UpdateOptions{})
+				return err
+			}, 1*time.Minute, time.Second).Should(Succeed())
+
+			// Wait until default values take effect
+			Eventually(func(g Gomega) {
+				connState, err := getTlsConnectionState()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS10))
+			}, 1*time.Minute, time.Second).Should(Succeed())
+
+			// Recreate file
+			tlsProfile := &api.TlsSecurityProfile{
+				Type: ocpconfigv1.TLSProfileCustomType,
+				Custom: &ocpconfigv1.CustomTLSProfile{
+					TLSProfileSpec: ocpconfigv1.TLSProfileSpec{
+						Ciphers: []string{
+							"TLS_AES_128_GCM_SHA256",
+							"TLS_AES_256_GCM_SHA384",
+							"TLS_CHACHA20_POLY1305_SHA256",
+						},
+						MinTLSVersion: ocpconfigv1.VersionTLS13,
+					},
+				},
+			}
+
+			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
+			Expect(err).ToNot(HaveOccurred())
+
+			Eventually(func() error {
+				foundConfig, err := ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+
+				if foundConfig.Data == nil {
+					foundConfig.Data = make(map[string]string)
+				}
+				foundConfig.Data[console.TlsProfileFile] = string(tlsProfileYaml)
+
+				_, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Update(context.TODO(), foundConfig, metav1.UpdateOptions{})
+				return err
+			}, 1*time.Minute, time.Second).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				connState, err := getTlsConnectionState()
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(connState.CipherSuite).To(BeElementOf(
+					tls.TLS_AES_128_GCM_SHA256,
+					tls.TLS_AES_256_GCM_SHA384,
+					tls.TLS_CHACHA20_POLY1305_SHA256,
+				))
+				Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS13))
+			}, 1*time.Minute, time.Second).Should(Succeed())
+		})
 	})
 })
 
