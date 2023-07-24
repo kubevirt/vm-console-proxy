@@ -43,7 +43,7 @@ var _ = Describe("Service", func() {
 		virtClient  *kubecli.MockKubevirtClient
 		vmInterface *kubecli.MockVirtualMachineInterface
 
-		testService *service
+		testService Service
 
 		request  *restful.Request
 		response *restful.Response
@@ -80,9 +80,7 @@ var _ = Describe("Service", func() {
 
 		virtClient.EXPECT().VirtualMachine(testNamespace).Return(vmInterface).AnyTimes()
 
-		testService = &service{
-			kubevirtClient: virtClient,
-		}
+		testService = NewService(virtClient)
 
 		request = restful.NewRequest(&http.Request{
 			Header: make(http.Header),
