@@ -147,7 +147,7 @@ var _ = Describe("Service", func() {
 		testService.TokenHandler(request, response)
 
 		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-		Expect(recorder.Body.String()).To(Equal("authenticating token cannot be empty"))
+		Expect(recorder.Body.String()).To(BeEmpty())
 	})
 
 	It("should fail if Authorization header is not Bearer", func() {
@@ -156,7 +156,7 @@ var _ = Describe("Service", func() {
 		testService.TokenHandler(request, response)
 
 		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-		Expect(recorder.Body.String()).To(Equal("authenticating token cannot be empty"))
+		Expect(recorder.Body.String()).To(BeEmpty())
 	})
 
 	It("should fail if authorization token is invalid", func() {
@@ -170,7 +170,7 @@ var _ = Describe("Service", func() {
 		testService.TokenHandler(request, response)
 
 		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-		Expect(recorder.Body.String()).To(Equal("token is not authenticated"))
+		Expect(recorder.Body.String()).To(BeEmpty())
 	})
 
 	It("should fail if authorization token does not have permission to access virtualmachineinstances/vnc", func() {
@@ -184,7 +184,7 @@ var _ = Describe("Service", func() {
 		testService.TokenHandler(request, response)
 
 		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
-		Expect(recorder.Body.String()).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
+		Expect(recorder.Body.String()).To(BeEmpty())
 	})
 
 	It("should pass user info from TokenReview to SubjectAccessReview", func() {
