@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -12,7 +13,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"golang.org/x/net/context"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
