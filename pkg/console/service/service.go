@@ -56,13 +56,13 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 
 	authToken := getAuthToken(request)
 	if authToken == "" {
-		_ = response.WriteError(http.StatusUnauthorized, fmt.Errorf("authenticating token cannot be empty"))
+		_ = response.WriteError(http.StatusUnauthorized, nil)
 		return
 	}
 
 	err = s.checkVncRbac(request.Request.Context(), authToken, params.name, params.namespace)
 	if err != nil {
-		_ = response.WriteError(http.StatusUnauthorized, err)
+		_ = response.WriteError(http.StatusUnauthorized, nil)
 		return
 	}
 

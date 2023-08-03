@@ -50,7 +50,7 @@ var _ = Describe("Kubevirt proxy", func() {
 			code, body, err := httpGet(tokenUrl, "", TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
-			Expect(string(body)).To(ContainSubstring("authenticating token cannot be empty"))
+			Expect(string(body)).To(BeEmpty())
 		})
 
 		It("should fail if not authorized to access vmi/vnc endpoint", func() {
@@ -74,7 +74,7 @@ var _ = Describe("Kubevirt proxy", func() {
 			code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
-			Expect(string(body)).To(ContainSubstring("does not have permission to access virtualmachineinstances/vnc endpoint"))
+			Expect(string(body)).To(BeEmpty())
 		})
 
 		It("should fail if VM does not exist", func() {
