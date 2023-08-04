@@ -23,6 +23,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 )
 
 const (
@@ -37,14 +38,16 @@ type Service interface {
 	TokenHandler(request *restful.Request, response *restful.Response)
 }
 
-func NewService(kubevirtClient kubecli.KubevirtClient) Service {
+func NewService(kubevirtClient kubecli.KubevirtClient, authConfig authConfig.Reader) Service {
 	return &service{
 		kubevirtClient: kubevirtClient,
+		authConfig:     authConfig,
 	}
 }
 
 type service struct {
 	kubevirtClient kubecli.KubevirtClient
+	authConfig     authConfig.Reader
 }
 
 func (s *service) TokenHandler(request *restful.Request, response *restful.Response) {
@@ -54,13 +57,7 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	authToken := getAuthToken(request)
-	if authToken == "" {
-		_ = response.WriteError(http.StatusUnauthorized, nil)
-		return
-	}
-
-	err = s.checkVncRbac(request.Request.Context(), authToken, params.name, params.namespace)
+	err = s.checkVncRbac(request, params)
 	if err != nil {
 		_ = response.WriteError(http.StatusUnauthorized, nil)
 		return
@@ -94,49 +91,43 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 	})
 }
 
-func (s *service) checkVncRbac(ctx context.Context, rbacToken, vmiName, vmiNamespace string) error {
-	tokenReview := &authnv1.TokenReview{
-		Spec: authnv1.TokenReviewSpec{
-			Token: rbacToken,
-		},
-	}
+func (s *service) checkVncRbac(request *restful.Request, params *tokenRequestParams) error {
+	requestHeader := request.Request.Header
 
-	tokenReview, err := s.kubevirtClient.AuthenticationV1().TokenReviews().Create(ctx, tokenReview, metav1.CreateOptions{})
+	username, err := s.getAuthUsername(requestHeader)
 	if err != nil {
-		return fmt.Errorf("error authenticating token: %w", err)
-	}
-	if tokenReview.Status.Error != "" {
-		return fmt.Errorf("error authenticating token: %s", tokenReview.Status.Error)
+		return err
 	}
 
-	if !tokenReview.Status.Authenticated {
-		return fmt.Errorf("token is not authenticated")
+	groups, err := s.getAuthGroups(requestHeader)
+	if err != nil {
+		return err
 	}
 
-	extras := map[string]authzv1.ExtraValue{}
-	for key, value := range tokenReview.Status.User.Extra {
-		extras[key] = authzv1.ExtraValue(value)
+	extras, err := s.getAuthExtraHeaders(requestHeader)
+	if err != nil {
+		return err
 	}
 
 	accessReview := &authzv1.SubjectAccessReview{
 		Spec: authzv1.SubjectAccessReviewSpec{
 			ResourceAttributes: &authzv1.ResourceAttributes{
-				Namespace:   vmiNamespace,
-				Name:        vmiName,
+				Namespace:   params.namespace,
+				Name:        params.name,
 				Verb:        "get",
 				Group:       kubevirtv1.SubresourceGroupName,
 				Version:     "v1",
 				Resource:    "virtualmachineinstances",
 				Subresource: "vnc",
 			},
-			User:   tokenReview.Status.User.Username,
-			Groups: tokenReview.Status.User.Groups,
+			User:   username,
+			Groups: groups,
 			Extra:  extras,
-			UID:    tokenReview.Status.User.UID,
 		},
 	}
 
-	accessReview, err = s.kubevirtClient.AuthorizationV1().SubjectAccessReviews().Create(ctx, accessReview, metav1.CreateOptions{})
+	accessReview, err = s.kubevirtClient.AuthorizationV1().SubjectAccessReviews().
+		Create(request.Request.Context(), accessReview, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("error checking permissions: %w", err)
 	}
@@ -145,6 +136,64 @@ func (s *service) checkVncRbac(ctx context.Context, rbacToken, vmiName, vmiNames
 		return fmt.Errorf("does not have permission to access virtualmachineinstances/vnc endpoint: %s", accessReview.Status.Reason)
 	}
 	return nil
+}
+
+func (s *service) getAuthUsername(requestHeader http.Header) (string, error) {
+	userHeaders, err := s.authConfig.GetUserHeaders()
+	if err != nil {
+		return "", err
+	}
+
+	for _, header := range userHeaders {
+		if usernames, ok := requestHeader[header]; ok && len(usernames) > 0 {
+			return usernames[0], nil
+		}
+	}
+
+	return "", fmt.Errorf("a valid user header is required")
+}
+
+func (s *service) getAuthGroups(requestHeader http.Header) ([]string, error) {
+	groupHeaders, err := s.authConfig.GetGroupHeaders()
+	if err != nil {
+		return nil, err
+	}
+
+	var groups []string
+	var foundHeader bool
+	for _, header := range groupHeaders {
+		if vals, ok := requestHeader[header]; ok {
+			foundHeader = true
+			groups = append(groups, vals...)
+		}
+	}
+
+	if !foundHeader {
+		return nil, fmt.Errorf("a valid group header is required")
+	}
+	return groups, nil
+}
+
+func (s *service) getAuthExtraHeaders(requestHeader http.Header) (map[string]authzv1.ExtraValue, error) {
+	extraHeaderPrefixes, err := s.authConfig.GetExtraHeaderPrefixes()
+	if err != nil {
+		return nil, err
+	}
+
+	extras := map[string]authzv1.ExtraValue{}
+
+outerLoop:
+	for key, values := range requestHeader {
+		for _, prefix := range extraHeaderPrefixes {
+			if strings.HasPrefix(key, prefix) {
+				extraKey := strings.TrimPrefix(key, prefix)
+				extras[extraKey] = values
+				continue outerLoop
+			}
+		}
+	}
+
+	return extras, nil
 }
 
 func (s *service) createResources(ctx context.Context, name string, vmMeta metav1.Object) error {
@@ -244,16 +293,6 @@ func (s *service) requestToken(ctx context.Context, serviceAccountNamespace stri
 		return "", err
 	}
 	return tokenRequest.Status.Token, nil
-}
-
-func getAuthToken(request *restful.Request) string {
-	authHeader := request.HeaderParameter("Authorization")
-
-	const bearerPrefix = "Bearer "
-	if strings.HasPrefix(authHeader, bearerPrefix) {
-		return authHeader[len(bearerPrefix):]
-	}
-	return ""
 }
 
 type tokenRequestParams struct {

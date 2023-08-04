@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,6 +25,8 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
+	fakeAuth "github.com/kubevirt/vm-console-proxy/pkg/console/authConfig/fake"
 )
 
 var _ = Describe("Service", func() {
@@ -32,8 +35,6 @@ var _ = Describe("Service", func() {
 		testNamespace = "test-namespace"
 		testName      = "test-name"
 		testToken     = "test-token-value"
-
-		authorizationHeader = "Authorization"
 	)
 
 	var (
@@ -43,7 +44,9 @@ var _ = Describe("Service", func() {
 		virtClient  *kubecli.MockKubevirtClient
 		vmInterface *kubecli.MockVirtualMachineInterface
 
-		testService *service
+		fakeAuthConfig *fakeAuth.FakeReader
+
+		testService Service
 
 		request  *restful.Request
 		response *restful.Response
@@ -80,9 +83,8 @@ var _ = Describe("Service", func() {
 
 		virtClient.EXPECT().VirtualMachine(testNamespace).Return(vmInterface).AnyTimes()
 
-		testService = &service{
-			kubevirtClient: virtClient,
-		}
+		fakeAuthConfig = fakeAuth.NewFakeReader()
+		testService = NewService(virtClient, fakeAuthConfig)
 
 		request = restful.NewRequest(&http.Request{
 			Header: make(http.Header),
@@ -93,14 +95,6 @@ var _ = Describe("Service", func() {
 		recorder = httptest.NewRecorder()
 		response = restful.NewResponse(recorder)
 		response.SetRequestAccepts(restful.MIME_JSON)
-
-		const validToken = "test-auth-token"
-		apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			createAction := action.(k8stesting.CreateAction)
-			tokenReview := createAction.GetObject().(*authnv1.TokenReview)
-			tokenReview.Status.Authenticated = true
-			return true, tokenReview, nil
-		})
 
 		apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
 			createAction := action.(k8stesting.CreateAction)
@@ -116,7 +110,9 @@ var _ = Describe("Service", func() {
 			return true, tokenRequest, nil
 		})
 
-		request.Request.Header.Set(authorizationHeader, "Bearer "+validToken)
+		request.Request.Header.Set(authConfig.DefaultUserHeader, "test-user")
+		request.Request.Header.Set(authConfig.DefaultGroupHeader, "test-group")
+
 		// Using a dummy URL, so tests don't panic
 		requestUrl, err := url.Parse("example.org/api")
 		Expect(err).ToNot(HaveOccurred())
@@ -141,8 +137,8 @@ var _ = Describe("Service", func() {
 		Expect(recorder.Body.String()).To(ContainSubstring("namespace and name parameters are required"))
 	})
 
-	It("should fail if no Authorization header is provided", func() {
-		request.Request.Header.Del(authorizationHeader)
+	It("should fail if no username header is provided", func() {
+		request.Request.Header.Del(authConfig.DefaultUserHeader)
 
 		testService.TokenHandler(request, response)
 
@@ -150,8 +146,8 @@ var _ = Describe("Service", func() {
 		Expect(recorder.Body.String()).To(BeEmpty())
 	})
 
-	It("should fail if Authorization header is not Bearer", func() {
-		request.Request.Header.Set(authorizationHeader, "Unknown auth header format")
+	It("should fail if no group header is provided", func() {
+		request.Request.Header.Del(authConfig.DefaultGroupHeader)
 
 		testService.TokenHandler(request, response)
 
@@ -159,21 +155,101 @@ var _ = Describe("Service", func() {
 		Expect(recorder.Body.String()).To(BeEmpty())
 	})
 
-	It("should fail if authorization token is invalid", func() {
-		apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+	It("should pass user, group and extras to the SubjectAccessReview request", func() {
+		const (
+			username = "some-user"
+			group    = "some-group"
+
+			extraDataOldKey = "Data-Old"
+			extraDataOld    = "data-old-value"
+			extraDataNewKey = "Data-New"
+			extraDataNew    = "data-new-value"
+		)
+
+		request.Request.Header.Set(authConfig.DefaultUserHeader, username)
+		request.Request.Header.Set(authConfig.DefaultGroupHeader, group)
+		request.Request.Header.Set(authConfig.DefaultExtraHeaderPrefix+extraDataOldKey, extraDataOld)
+		request.Request.Header.Set(authConfig.DefaultExtraHeaderPrefix+extraDataNewKey, extraDataNew)
+
+		apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
 			createAction := action.(k8stesting.CreateAction)
-			tokenReview := createAction.GetObject().(*authnv1.TokenReview)
-			tokenReview.Status.Authenticated = false
-			return true, tokenReview, nil
+			sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
+
+			Expect(sar.Spec.User).To(Equal(username))
+			Expect(sar.Spec.Groups).To(ContainElement(group))
+			Expect(sar.Spec.Extra).To(HaveKeyWithValue(extraDataOldKey, authzv1.ExtraValue{extraDataOld}))
+			Expect(sar.Spec.Extra).To(HaveKeyWithValue(extraDataNewKey, authzv1.ExtraValue{extraDataNew}))
+
+			sar.Status.Allowed = true
+			return true, sar, nil
 		})
 
 		testService.TokenHandler(request, response)
 
+		Expect(recorder.Code).To(Equal(http.StatusOK))
+	})
+
+	It("should read header keys from auth-config", func() {
+		const (
+			username = "some-user"
+			group    = "some-group"
+
+			testUserHeader        = "Test-User-Header"
+			testGroupHeader       = "Test-Group-Header"
+			testExtraHeaderPrefix = "Test-Extra-Header-"
+
+			extraDataOldKey = "Data-Old"
+			extraDataOld    = "data-old-value"
+			extraDataNewKey = "Data-New"
+			extraDataNew    = "data-new-value"
+		)
+
+		fakeAuthConfig.GetUserHeadersFunc = func() ([]string, error) {
+			return []string{testUserHeader}, nil
+		}
+		fakeAuthConfig.GetGroupHeadersFunc = func() ([]string, error) {
+			return []string{testGroupHeader}, nil
+		}
+		fakeAuthConfig.GetExtraHeaderPrefixesFunc = func() ([]string, error) {
+			return []string{testExtraHeaderPrefix}, nil
+		}
+
+		request.Request.Header = http.Header{}
+		request.Request.Header.Set(testUserHeader, username)
+		request.Request.Header.Set(testGroupHeader, group)
+		request.Request.Header.Set(testExtraHeaderPrefix+extraDataOldKey, extraDataOld)
+		request.Request.Header.Set(testExtraHeaderPrefix+extraDataNewKey, extraDataNew)
+
+		apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
+
+			Expect(sar.Spec.User).To(Equal(username))
+			Expect(sar.Spec.Groups).To(ContainElement(group))
+			Expect(sar.Spec.Extra).To(HaveKeyWithValue(extraDataOldKey, authzv1.ExtraValue{extraDataOld}))
+			Expect(sar.Spec.Extra).To(HaveKeyWithValue(extraDataNewKey, authzv1.ExtraValue{extraDataNew}))
+
+			sar.Status.Allowed = true
+			return true, sar, nil
+		})
+
+		testService.TokenHandler(request, response)
+
+		Expect(recorder.Code).To(Equal(http.StatusOK))
+	})
+
+	It("should fail if auth config returns error", func() {
+		fakeAuthConfig.GetUserHeadersFunc = func() ([]string, error) {
+			return nil, fmt.Errorf("error getting user headers")
+		}
+
+		testService.TokenHandler(request, response)
+
 		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
 		Expect(recorder.Body.String()).To(BeEmpty())
 	})
 
-	It("should fail if authorization token does not have permission to access virtualmachineinstances/vnc", func() {
+	It("should fail if user does not have permission to access virtualmachineinstances/vnc", func() {
 		apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
 			createAction := action.(k8stesting.CreateAction)
 			sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
@@ -185,43 +261,6 @@ var _ = Describe("Service", func() {
 
 		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
 		Expect(recorder.Body.String()).To(BeEmpty())
-	})
-
-	It("should pass user info from TokenReview to SubjectAccessReview", func() {
-		const (
-			userName = "user-name"
-			userUid  = "user-uid"
-		)
-
-		var (
-			groups = []string{"group1", "group2"}
-		)
-
-		apiClient.Fake.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			createAction := action.(k8stesting.CreateAction)
-			tokenReview := createAction.GetObject().(*authnv1.TokenReview)
-			tokenReview.Status.Authenticated = true
-			tokenReview.Status.User = authnv1.UserInfo{
-				Username: userName,
-				UID:      userUid,
-				Groups:   groups,
-			}
-			return true, tokenReview, nil
-		})
-
-		apiClient.Fake.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			createAction := action.(k8stesting.CreateAction)
-			sar := createAction.GetObject().(*authzv1.SubjectAccessReview)
-
-			Expect(sar.Spec.User).To(Equal(userName))
-			Expect(sar.Spec.UID).To(Equal(userUid))
-			Expect(sar.Spec.Groups).To(Equal(groups))
-
-			sar.Status.Allowed = true
-			return true, sar, nil
-		})
-
-		testService.TokenHandler(request, response)
 	})
 
 	It("should fail if VM does not exist", func() {

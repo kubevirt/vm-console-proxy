@@ -16,6 +16,7 @@ import (
 	"kubevirt.io/client-go/log"
 
 	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
 )
 
@@ -25,7 +26,7 @@ type Watch interface {
 	GetConfig() (*tls.Config, error)
 }
 
-func NewWatch(configDir, tlsProfileFileName, certAndKeyDir, certsName, keyName string) Watch {
+func NewWatch(configDir, tlsProfileFileName, certAndKeyDir, certsName, keyName string, authConfig authConfig.Reader) Watch {
 	return &watch{
 		configDir:          configDir,
 		tlsProfileFileName: tlsProfileFileName,
@@ -35,6 +36,8 @@ func NewWatch(configDir, tlsProfileFileName, certAndKeyDir, certsName, keyName s
 		certsName:     certsName,
 		keyName:       keyName,
 		certError:     fmt.Errorf("certificate not loaded"),
+
+		authConfig: authConfig,
 	}
 }
 
@@ -54,6 +57,8 @@ type watch struct {
 
 	certificate *tls.Certificate
 	certError   error
+
+	authConfig authConfig.Reader
 }
 
 func (w *watch) AddToFilewatch(watch filewatch.Watch) error {
@@ -69,6 +74,11 @@ func (w *watch) Reload() {
 }
 
 func (w *watch) GetConfig() (*tls.Config, error) {
+	clientCa, err := w.authConfig.GetClientCA()
+	if err != nil {
+		return nil, err
+	}
+
 	w.lock.RLock()
 	defer w.lock.RUnlock()
 
@@ -83,6 +93,8 @@ func (w *watch) GetConfig() (*tls.Config, error) {
 		CipherSuites: w.ciphers,
 		MinVersion:   w.minTlsVersion,
 		Certificates: []tls.Certificate{*w.certificate},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    clientCa,
 	}, nil
 }
 

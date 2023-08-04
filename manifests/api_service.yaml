@@ -1,0 +1,16 @@
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1alpha1.token.kubevirt.io
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+spec:
+  group: token.kubevirt.io
+  version: v1alpha1
+  groupPriorityMinimum: 2000
+  versionPriority: 10
+  service:
+    name: vm-console-proxy
+    # TODO: use kustomize to set this namesapce
+    namespace: kubevirt
+    port: 443

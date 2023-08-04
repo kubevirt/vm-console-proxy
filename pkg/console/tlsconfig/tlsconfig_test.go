@@ -2,6 +2,8 @@ package tlsconfig
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	fakeAuth "github.com/kubevirt/vm-console-proxy/pkg/console/authConfig/fake"
 	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
 )
 
@@ -31,6 +34,9 @@ var _ = Describe("TlsConfig", func() {
 		certAndKeyDir string
 		certPath      string
 		keyPath       string
+
+		fakeAuthConfig *fakeAuth.FakeReader
+		testCertPool   *x509.CertPool
 
 		configWatch Watch
 	)
@@ -65,7 +71,23 @@ var _ = Describe("TlsConfig", func() {
 		keyPath = filepath.Join(certAndKeyDir, keyName)
 		Expect(os.WriteFile(keyPath, keyBytes, 0666)).To(Succeed())
 
-		configWatch = NewWatch(configDir, tlsConfigName, certAndKeyDir, certName, keyName)
+		testCerts, err := cert.ParseCertsPEM([]byte(testCa))
+		if err != nil {
+			panic(fmt.Sprintf("failed to parse testCa: %v", err))
+		}
+
+		testCertPool = x509.NewCertPool()
+		for _, crt := range testCerts {
+			testCertPool.AddCert(crt)
+		}
+
+		fakeAuthConfig = &fakeAuth.FakeReader{
+			GetClientCAFunc: func() (*x509.CertPool, error) {
+				return testCertPool, nil
+			},
+		}
+
+		configWatch = NewWatch(configDir, tlsConfigName, certAndKeyDir, certName, keyName, fakeAuthConfig)
 	})
 
 	It("should fail if config was not loaded", func() {
@@ -226,6 +248,26 @@ var _ = Describe("TlsConfig", func() {
 			Expect(config.MinVersion).To(BeZero())
 		})
 	})
+
+	It("should read client CA from auth config", func() {
+		configWatch.Reload()
+
+		config, err := configWatch.GetConfig()
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(config.ClientCAs.Equal(testCertPool)).To(BeTrue())
+	})
+
+	It("if should fail if client CA is not in auth config", func() {
+		fakeAuthConfig.GetClientCAFunc = func() (*x509.CertPool, error) {
+			return nil, fmt.Errorf("error getting client CA")
+		}
+
+		configWatch.Reload()
+
+		_, err := configWatch.GetConfig()
+		Expect(err).To(MatchError("error getting client CA"))
+	})
 })
 
 type mockFileWatch struct {
@@ -266,3 +308,25 @@ func TestTlsConfig(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "TLS Config Suite")
 }
+
+// testCa is s self-signed certificate with that expires at 2033-07-23
+const testCa = `-----BEGIN CERTIFICATE-----
+MIIDCzCCAfMCFEZRPwRupWsOa/rvrr85Ekqn376xMA0GCSqGSIb3DQEBCwUAMEIx
+CzAJBgNVBAYTAlhYMRUwEwYDVQQHDAxEZWZhdWx0IENpdHkxHDAaBgNVBAoME0Rl
+ZmF1bHQgQ29tcGFueSBMdGQwHhcNMjMwNzI2MTM1NDU0WhcNMzMwNzIzMTM1NDU0
+WjBCMQswCQYDVQQGEwJYWDEVMBMGA1UEBwwMRGVmYXVsdCBDaXR5MRwwGgYDVQQK
+DBNEZWZhdWx0IENvbXBhbnkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB
+CgKCAQEAqQPy+9HOhIubR9VJis16B4x+U42dNzdHLBzUrzT0Cdjv13DwHDES0SMq
+Bh/PfEfIEc7brXYUijrQM5VWQxMaDxMhm98UKo+XUaQ3r9k/jEQEXsNCj+hL3soU
+fAdPM+u1uHkpGYaYJGh2N0viD2nyXOuSAquTQAAQ+Vqqz5Y7eU1qILRgZvhtpBa6
+QMkYF0JOVRwhBRLSft/e05vqP6bc0th/2mGFnheXxvtPpP6sH1NuJSxi0/8kHPYF
+PvfWdXe3MG/0bF/6Tw3IntjBlOe5D/Ks5sD8lsB/yNLMDKOqjWLje/9IX1uhb8zc
+N8uTYrooFzp4z0U7Ir+xOZelOUC1KwIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQCG
+d5/Xzb/NAVZHEos+6oX0Hi3f4D1jHmcah3yEId/KsrS7SKm8boFyR7FlXZzLqSLt
+IB8tTXrzehafHNuLJHOWFM4X1J48M/68lvEc2xM5KrWtg2G3CppA+b2q17AaYiuB
+OhJYPlr1w6N7/hO8/CQdzRfSPj84252MDehH03pAyxme5sH7iwI/yL623lqJrA96
+HyGQSDOtbnHhtz1REz+FziJnMR6AGoeHE7d/sZZt8WKi1Cc2FN/fZvQNx7RxvVSZ
+6hvTouSE74Op+DmgDst7a3P8rED5ZV3+Q0E9GRYJypiL3rz9z4mDy+U+L0ZROZad
+50PIG1NMnPahDQa/IdGC
+-----END CERTIFICATE-----
+`

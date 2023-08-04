@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -10,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"golang.org/x/net/context"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -32,19 +33,20 @@ const (
 	apiPort = 8768
 
 	testHostname = "vm-console.test"
-	urlBase      = testHostname + "/api/v1alpha1"
-	httpsUrlBase = "https://" + urlBase
 
 	configMapName = "vm-console-proxy"
 
 	testNamespace      = "vm-console-proxy-functests"
 	serviceAccountName = "vm-console-proxy-functests"
-	roleBindingName    = serviceAccountName
+	roleName           = serviceAccountName
 )
 
 var (
-	ApiClient      kubecli.KubevirtClient
-	TestHttpClient *http.Client
+	apiServerHostname string
+
+	ApiClient         kubecli.KubevirtClient
+	PortForwardClient *http.Client
+	TestHttpClient    *http.Client
 )
 
 var (
@@ -59,18 +61,26 @@ var _ = BeforeSuite(func() {
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred())
 
+	apiServerHostname = config.Host
+
 	ApiClient, err = kubecli.GetKubevirtClientFromRESTConfig(config)
 	Expect(err).ToNot(HaveOccurred())
 
 	portForwarder = port_forwarder.New(config, ApiClient.CoreV1().RESTClient())
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxConnsPerHost = 1
-	transport.MaxIdleConnsPerHost = 1
-	transport.DialContext = PortForwardDial
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	portForwardTransport := http.DefaultTransport.(*http.Transport).Clone()
+	portForwardTransport.MaxConnsPerHost = 1
+	portForwardTransport.MaxIdleConnsPerHost = 1
+	portForwardTransport.DialContext = PortForwardDial
+	portForwardTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	PortForwardClient = &http.Client{
+		Transport: portForwardTransport,
+	}
+
+	testHttpTransport := http.DefaultTransport.(*http.Transport).Clone()
+	testHttpTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	TestHttpClient = &http.Client{
-		Transport: transport,
+		Transport: testHttpTransport,
 	}
 
 	originalConfigMap, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
@@ -107,10 +117,14 @@ var _ = BeforeSuite(func() {
 
 	role := &rbac.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceAccountName,
+			Name:      roleName,
 			Namespace: testNamespace,
 		},
 		Rules: []rbac.PolicyRule{{
+			APIGroups: []string{"token.kubevirt.io"},
+			Resources: []string{"virtualmachines/vnc"},
+			Verbs:     []string{"get"},
+		}, {
 			APIGroups: []string{kubevirtcorev1.SubresourceGroupName},
 			Resources: []string{"virtualmachineinstances/vnc"},
 			Verbs:     []string{"get"},
@@ -127,7 +141,7 @@ var _ = BeforeSuite(func() {
 
 	roleBinding := &rbac.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      roleBindingName,
+			Name:      roleName,
 			Namespace: testNamespace,
 		},
 		Subjects: []rbac.Subject{{
@@ -198,6 +212,10 @@ func UpdateConfigMap(updateFunc func(configMap *core.ConfigMap)) {
 		_, err = ApiClient.CoreV1().ConfigMaps(DeploymentNamespace).Update(context.TODO(), foundConfig, metav1.UpdateOptions{})
 		return err
 	}, 10*time.Second, time.Second).Should(Succeed())
+}
+
+func GetApiUrlBase() string {
+	return apiServerHostname + "/apis/" + api.Group + "/" + api.Version + "/"
 }
 
 func GetApiConnection() (net.Conn, error) {

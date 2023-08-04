@@ -3,13 +3,13 @@ package tests
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/url"
+	"path"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	rbac "k8s.io/api/rbac/v1"
 
 	"github.com/golang-jwt/jwt/v4"
 	authnv1 "k8s.io/api/authentication/v1"
@@ -25,12 +25,6 @@ import (
 )
 
 var _ = Describe("Kubevirt proxy", func() {
-	const (
-		tokenEndpoint = "token"
-
-		tokenUrlTemplate = httpsUrlBase + "/" + testNamespace + "/%s/" + tokenEndpoint
-	)
-
 	var (
 		saToken string
 	)
@@ -46,31 +40,41 @@ var _ = Describe("Kubevirt proxy", func() {
 	Context("/token endpoint", func() {
 
 		It("should fail if not authenticated", func() {
-			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
+			tokenUrl := getTokenUrl("test-vm")
 			code, body, err := httpGet(tokenUrl, "", TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(code).To(Equal(http.StatusUnauthorized))
-			Expect(string(body)).To(BeEmpty())
+			Expect(code).To(Equal(http.StatusForbidden))
+
+			status := &metav1.Status{}
+			Expect(json.Unmarshal(body, status)).To(Succeed())
+
+			Expect(status.Reason).To(Equal(metav1.StatusReasonForbidden))
+			Expect(status.Details).ToNot(BeNil())
+			Expect(status.Details.Group).To(Equal("token.kubevirt.io"))
+			Expect(status.Details.Kind).To(Equal("virtualmachines"))
 		})
 
 		It("should fail if not authorized to access vmi/vnc endpoint", func() {
-			roleBinding, err := ApiClient.RbacV1().RoleBindings(testNamespace).Get(context.TODO(), roleBindingName, metav1.GetOptions{})
+			role, err := ApiClient.RbacV1().Roles(testNamespace).Get(context.TODO(), roleName, metav1.GetOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
-			err = ApiClient.RbacV1().RoleBindings(roleBinding.Namespace).Delete(context.TODO(), roleBinding.Name, metav1.DeleteOptions{})
+			newRole := role.DeepCopy()
+			// Removed the rule to allow accessing virtualmachineinstances/vnc
+			newRole.Rules = []rbac.PolicyRule{{
+				APIGroups: []string{"token.kubevirt.io"},
+				Resources: []string{"virtualmachines/vnc"},
+				Verbs:     []string{"get"},
+			}}
+
+			newRole, err = ApiClient.RbacV1().Roles(testNamespace).Update(context.TODO(), newRole, metav1.UpdateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			DeferCleanup(func() {
-				roleBinding.ObjectMeta.CreationTimestamp = metav1.Time{}
-				roleBinding.ObjectMeta.DeletionTimestamp = nil
-				roleBinding.ObjectMeta.ResourceVersion = ""
-				roleBinding.ObjectMeta.Generation = 0
-				roleBinding.ObjectMeta.UID = ""
-
-				_, err = ApiClient.RbacV1().RoleBindings(roleBinding.Namespace).Create(context.TODO(), roleBinding, metav1.CreateOptions{})
+				newRole.Rules = role.Rules
+				newRole, err = ApiClient.RbacV1().Roles(testNamespace).Update(context.TODO(), newRole, metav1.UpdateOptions{})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
-			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
+			tokenUrl := getTokenUrl("test-vm")
 			code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusUnauthorized))
@@ -78,7 +82,7 @@ var _ = Describe("Kubevirt proxy", func() {
 		})
 
 		It("should fail if VM does not exist", func() {
-			tokenUrl := fmt.Sprintf(tokenUrlTemplate, "test-vm")
+			tokenUrl := getTokenUrl("test-vm")
 			code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusNotFound))
@@ -111,7 +115,7 @@ var _ = Describe("Kubevirt proxy", func() {
 			})
 
 			It("should get token with default duration", func() {
-				tokenUrl := fmt.Sprintf(tokenUrlTemplate, vmName)
+				tokenUrl := getTokenUrl(vmName)
 				code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
@@ -122,8 +126,7 @@ var _ = Describe("Kubevirt proxy", func() {
 			})
 
 			It("should get token with specified duration", func() {
-				tokenUrl, err := url.JoinPath(httpsUrlBase, testNamespace, vmName, tokenEndpoint)
-				Expect(err).ToNot(HaveOccurred())
+				tokenUrl := getTokenUrl(vmName)
 
 				code, body, err := httpGet(tokenUrl+"?duration=24h", saToken, TestHttpClient)
 				Expect(err).ToNot(HaveOccurred())
@@ -161,7 +164,7 @@ var _ = Describe("Kubevirt proxy", func() {
 				}
 			})
 
-			tokenUrl := fmt.Sprintf(tokenUrlTemplate, vm.Name)
+			tokenUrl := getTokenUrl(vm.Name)
 			code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(code).To(Equal(http.StatusOK))
@@ -211,6 +214,10 @@ var _ = Describe("Kubevirt proxy", func() {
 		})
 	})
 })
+
+func getTokenUrl(vmName string) string {
+	return GetApiUrlBase() + path.Join("namespaces", testNamespace, "virtualmachines", vmName, "vnc")
+}
 
 func testVm(namePrefix string) *kubevirtcorev1.VirtualMachine {
 	const (
