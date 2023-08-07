@@ -1,6 +1,7 @@
 # VM Console Proxy
 
-It provides an endpoint to generate time limited tokens that are then used to access VNC.
+This project adds a new API extension to Kubernetes, 
+that can be used to generate time limited tokens to access VNC.
 
 **Note:** This project no longer provides VNC proxy functionality, so the project name should be changed in the future.
 
@@ -18,30 +19,3 @@ kubectl apply -f "https://github.com/kubevirt/vm-console-proxy/releases/latest/d
 
 ## API
 See the [API documentation](docs/api.md).
-
-## Exposing the service
-
-The `Service` is not exposed by default, because the `Ingress` configuration
-can depend on the cluster where it is running. For example this `Ingress` can be used:
-
-[//]: # (TODO: This ingress currently does not work with OpenShit. Look into why.)
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: vm-console
-  namespace: ${VM_CONSOLE_PROXY_NAMESPACE}
-spec:
-  rules:
-    - host: ${HOSTNAME}
-      http:
-        paths:
-          - backend:
-              service:
-                name: vm-console-proxy
-                port:
-                  number: 443
-            path: /
-            pathType: Prefix
-```
