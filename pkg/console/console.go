@@ -88,9 +88,7 @@ func Run() error {
 func webService(handlers service.Service) *restful.WebService {
 	ws := new(restful.WebService)
 
-	ws.Path("/apis/" + api.Group + "/" + api.Version)
-
-	ws.Route(ws.GET("/namespaces/{namespace:[a-z0-9][a-z0-9\\-]*}/virtualmachines/{name:[a-z0-9][a-z0-9\\-]*}/vnc").
+	ws.Route(ws.GET("/apis/" + api.Group + "/" + api.Version + "/namespaces/{namespace:[a-z0-9][a-z0-9\\-]*}/virtualmachines/{name:[a-z0-9][a-z0-9\\-]*}/vnc").
 		To(handlers.TokenHandler).
 		Doc("generate token").
 		Operation("token").
@@ -99,17 +97,86 @@ func webService(handlers service.Service) *restful.WebService {
 		Param(ws.QueryParameter("duration", "duration")))
 
 	// This endpoint is called by the API Server to get available resources.
-	// We can return an empty list here, it does not block the functionality.
-	ws.Route(ws.GET("/").
+	ws.Route(ws.GET("/apis/"+api.Group+"/"+api.Version).
+		Produces(restful.MIME_JSON).Writes(metav1.APIResourceList{}).
 		To(func(request *restful.Request, response *restful.Response) {
 			list := &metav1.APIResourceList{
 				TypeMeta: metav1.TypeMeta{
-					Kind: "APIResourceList",
+					Kind:       "APIResourceList",
+					APIVersion: "v1",
 				},
-				APIResources: []metav1.APIResource{},
+				GroupVersion: api.Group + "/" + api.Version,
+				APIResources: []metav1.APIResource{{
+					Name:       "virtualmachines/vnc",
+					Namespaced: true,
+				}},
 			}
 			response.WriteAsJson(list)
-		}))
+		}).
+		Operation("getAPIResources").
+		Doc("Get API resources").
+		Returns(http.StatusOK, "OK", metav1.APIResourceList{}).
+		Returns(http.StatusNotFound, "NotFound", ""))
+
+	gv := metav1.GroupVersionForDiscovery{
+		GroupVersion: api.Group + "/" + api.Version,
+		Version:      api.Version,
+	}
+
+	apiGroup := metav1.APIGroup{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "APIGroup",
+			APIVersion: "v1",
+		},
+		Name:             api.Group,
+		Versions:         []metav1.GroupVersionForDiscovery{gv},
+		PreferredVersion: gv,
+	}
+
+	// K8s needs the ability to query info about a specific API group
+	ws.Route(ws.GET("/apis/"+api.Group).
+		Produces(restful.MIME_JSON).Writes(metav1.APIGroup{}).
+		To(func(request *restful.Request, response *restful.Response) {
+			response.WriteAsJson(apiGroup)
+		}).
+		Operation("GetSubAPIGroup").
+		Doc("Get API Group").
+		Returns(http.StatusOK, "OK", metav1.APIGroup{}).
+		Returns(http.StatusNotFound, "NotFound", ""))
+
+	// K8s needs the ability to query the list of API groups this endpoint supports
+	ws.Route(ws.GET("apis").
+		Produces(restful.MIME_JSON).Writes(metav1.APIGroupList{}).
+		To(func(request *restful.Request, response *restful.Response) {
+			list := &metav1.APIGroupList{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "APIGroupList",
+					APIVersion: "v1",
+				},
+				Groups: []metav1.APIGroup{apiGroup},
+			}
+			response.WriteAsJson(list)
+		}).
+		Operation("getAPIGroupList").
+		Doc("Get API GroupList").
+		Returns(http.StatusOK, "OK", metav1.APIGroupList{}).
+		Returns(http.StatusNotFound, "NotFound", ""))
+
+	// K8s needs the ability to query the root paths
+	ws.Route(ws.GET("/").
+		Produces(restful.MIME_JSON).Writes(metav1.RootPaths{}).
+		To(func(request *restful.Request, response *restful.Response) {
+			response.WriteAsJson(&metav1.RootPaths{
+				Paths: []string{
+					"/apis",
+					"/apis/" + api.Group,
+					"/apis/" + api.Group + "/" + api.Version,
+				},
+			})
+		}).
+		Operation("getRootPaths").
+		Doc("Get API root paths").
+		Returns(http.StatusOK, "OK", metav1.RootPaths{}))
 
 	return ws
 }
