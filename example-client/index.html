@@ -160,7 +160,8 @@
             url,
             {
                 wsProtocols: [
-                    "base64url.bearer.authorization.k8s.io." + vncToken,
+                    // The token needs to be base64 encoded
+                    "base64url.bearer.authorization.k8s.io." + btoa(vncToken),
                     "base64.binary.k8s.io"
                 ]
             }

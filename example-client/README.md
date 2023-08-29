@@ -1,9 +1,7 @@
 # Example VNC client
 
-**This example client currently does not work. It will be fixed in the future.**
-
 This directory contains an example page that uses noVNC library
-to connect to the `vn-console-proxy` running on a cluster.
+to connect to the `VMI/vnc` endpoint using a token. 
 
 A simple server with this page can be started by:
 ```bash
@@ -15,7 +13,7 @@ The client page takes these URL parameters:
 - `port` - Port for kubevirt API. For CRC it will be `6443`.
 - `namspace` - Namespace where the VM is.
 - `name` - Name of the VM.
-- `token` - Token generated using the `/token` endpoint.
+- `token` - Token returned by `vm-console-proxy`.
 
 For example, the following URL will point the client to a VM after substituting variables:
 ```
