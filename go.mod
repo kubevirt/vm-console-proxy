@@ -1,6 +1,6 @@
 module github.com/kubevirt/vm-console-proxy
 
-go 1.19
+go 1.20
 
 require (
 	github.com/emicklei/go-restful/v3 v3.10.1

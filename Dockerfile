@@ -2,7 +2,7 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal as builder
 
 RUN microdnf install -y make tar gzip which && microdnf clean all
 
-RUN curl -L https://go.dev/dl/go1.19.2.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://go.dev/dl/go1.20.13.linux-amd64.tar.gz | tar -C /usr/local -xzf -
 ENV PATH=$PATH:/usr/local/go/bin
 
 WORKDIR /workspace
