@@ -72,8 +72,8 @@ var _ = Describe("Service", func() {
 		}
 
 		vmInterface = kubecli.NewMockVirtualMachineInterface(ctrl)
-		vmInterface.EXPECT().Get(testName, gomock.Any()).DoAndReturn(
-			func(_ string, _ any) (*v1.VirtualMachine, error) {
+		vmInterface.EXPECT().Get(gomock.Any(), testName, gomock.Any()).DoAndReturn(
+			func(_ any, _ string, _ any) (*v1.VirtualMachine, error) {
 				if testVm != nil {
 					return testVm, nil
 				}

@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	rbac "k8s.io/api/rbac/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/golang-jwt/jwt/v4"
 	authnv1 "k8s.io/api/authentication/v1"
@@ -96,18 +97,18 @@ var _ = Describe("Kubevirt proxy", func() {
 
 			BeforeEach(func() {
 				vm := testVm("test-vm-")
-				vm, err := ApiClient.VirtualMachine(testNamespace).Create(vm)
+				vm, err := ApiClient.VirtualMachine(testNamespace).Create(context.Background(), vm)
 				Expect(err).ToNot(HaveOccurred())
 
 				DeferCleanup(func() {
-					err := ApiClient.VirtualMachine(testNamespace).Delete(vm.Name, &metav1.DeleteOptions{})
+					err := ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vm.Name, &metav1.DeleteOptions{})
 					if err != nil && !errors.IsNotFound(err) {
 						Expect(err).ToNot(HaveOccurred())
 					}
 				})
 
 				Eventually(func() error {
-					_, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(vm.Name, &metav1.GetOptions{})
+					_, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &metav1.GetOptions{})
 					return err
 				}, 10*time.Minute, time.Second).Should(Succeed())
 
@@ -154,11 +155,11 @@ var _ = Describe("Kubevirt proxy", func() {
 		It("should be able to access VMI/vnc endpoint using token", func() {
 			vm := testVm("test-vm-")
 			vm.Spec.Running = pointer.Bool(false)
-			vm, err := ApiClient.VirtualMachine(testNamespace).Create(vm)
+			vm, err := ApiClient.VirtualMachine(testNamespace).Create(context.Background(), vm)
 			Expect(err).ToNot(HaveOccurred())
 
 			DeferCleanup(func() {
-				err := ApiClient.VirtualMachine(testNamespace).Delete(vm.Name, &metav1.DeleteOptions{})
+				err := ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vm.Name, &metav1.DeleteOptions{})
 				if err != nil && !errors.IsNotFound(err) {
 					Expect(err).ToNot(HaveOccurred())
 				}
@@ -233,7 +234,7 @@ func testVm(namePrefix string) *kubevirtcorev1.VirtualMachine {
 			Namespace:    testNamespace,
 		},
 		Spec: kubevirtcorev1.VirtualMachineSpec{
-			Running: pointer.BoolPtr(true),
+			Running: ptr.To(true),
 			Template: &kubevirtcorev1.VirtualMachineInstanceTemplateSpec{
 				Spec: kubevirtcorev1.VirtualMachineInstanceSpec{
 					Domain: kubevirtcorev1.DomainSpec{

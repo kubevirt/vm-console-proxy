@@ -63,7 +63,7 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	vm, err := s.kubevirtClient.VirtualMachine(params.namespace).Get(params.name, &metav1.GetOptions{})
+	vm, err := s.kubevirtClient.VirtualMachine(params.namespace).Get(request.Request.Context(), params.name, &metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachine does not exist: %w", err))
