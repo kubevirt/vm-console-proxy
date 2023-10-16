@@ -31,8 +31,12 @@ curl --header "Authorization: Bearer ${KUBERNETES_USER_TOKEN}" \
      "https://${K8S_API_URL}/apis/token.kubevirt.io/v1alpha1/namespaces/${VMI_NAMESPACE}/virtualmachines/${VMI_NAME}/vnc?duration=${DURATION}"
 ```
 
-The `KUBERNETES_USER_TOKEN` variable is a bearer token used to authenticate with
-kubernetes API. It can be obtained using:
+In this example, we use a bearer token to authenticate the user with the Kubernetes API server.
+Kubernetes supports two main ways of authentication, token and TLS client certificates.
+Additional methods can be configured using the authenticating proxy. 
+More information is in the [documentation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#authentication-strategies).
+
+If the user is logged in using a token, then the token can be retrieved using: 
 ```bash
 KUBERNETES_USER_TOKEN=$(oc whoami -t)
 ```
