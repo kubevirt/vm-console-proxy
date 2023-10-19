@@ -6,7 +6,7 @@ that can be used to generate time limited tokens to access VNC.
 **Note:** This project no longer provides VNC proxy functionality, so the project name should be changed in the future.
 
 ## Demo
-[![asciicast](https://asciinema.org/a/2j9bvA5nTLPLdKVjHoQWbqZgj.png)](https://asciinema.org/a/2j9bvA5nTLPLdKVjHoQWbqZgj)
+[![asciicast](https://asciinema.org/a/oqA9yNAteTcUxU3vyWTDWG7dh.svg)](https://asciinema.org/a/oqA9yNAteTcUxU3vyWTDWG7dh)
 
 ## Installation
 
