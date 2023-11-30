@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    allow:
+      - dependency-type: "all"
+  - package-ecosystem: "gomod"
+    directory: "/"
+    target-branch: "release-v0.3"
+    schedule:
+      interval: "daily"
+    allow:
+      - dependency-type: "all"
+  - package-ecosystem: "gomod"
+    directory: "/"
+    target-branch: "release-v0.2"
+    schedule:
+      interval: "daily"
+    allow:
+      - dependency-type: "all"
+  - package-ecosystem: "gomod"
+    directory: "/"
+    target-branch: "release-v0.1"
+    schedule:
+      interval: "daily"
+    allow:
+      - dependency-type: "all"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"  
