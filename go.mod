@@ -3,7 +3,7 @@ module github.com/kubevirt/vm-console-proxy
 go 1.19
 
 require (
-	github.com/emicklei/go-restful/v3 v3.10.1
+	github.com/emicklei/go-restful/v3 v3.11.0
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/golang-jwt/jwt/v4 v4.4.3
 	github.com/golang/mock v1.5.0
