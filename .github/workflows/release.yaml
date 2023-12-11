@@ -16,7 +16,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Install Golang 1.19
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: '1.19'
 
