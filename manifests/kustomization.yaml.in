@@ -9,6 +9,7 @@ resources:
   - service.yaml
   - deployment.yaml
   - api_service.yaml
+  - user_role.yaml
 
 transformers:
   - transformer_namespace.yaml
