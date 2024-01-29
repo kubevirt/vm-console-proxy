@@ -47,7 +47,7 @@ jobs:
           asset_content_type: text/plain
 
       - name: Trigger ssp-operator
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GH_ACCESS_TOKEN }}
           repository: kubevirt/ssp-operator
