@@ -15,13 +15,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Install Golang 1.19
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.19'
-
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install Golang
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
 
       - name: Generate release manifests
         env:

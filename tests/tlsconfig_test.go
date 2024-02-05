@@ -151,7 +151,7 @@ var _ = Describe("TLS config", func() {
 
 	It("should fail if client certificate is not provided", func() {
 		_, _, err := httpGet("https://"+testHostname+"/apis/"+api.Group+"/"+api.Version+"/", "", PortForwardClient)
-		Expect(err).To(MatchError(ContainSubstring("bad certificate")))
+		Expect(err).To(MatchError(ContainSubstring("certificate required")))
 	})
 
 })
