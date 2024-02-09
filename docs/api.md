@@ -40,3 +40,8 @@ If the user is logged in using a token, then the token can be retrieved using:
 ```bash
 KUBERNETES_USER_TOKEN=$(oc whoami -t)
 ```
+
+### Revoking a token
+Revoking a single token is not possible. 
+All tokens associated with a VM can be revoked by deleting the `ServiceAccount` that was created for generating them.
+It is in the same namespace as the VM, its name is `${VM_NAME}-vnc-access`, and it has `ownerReference` set to the VM. 
