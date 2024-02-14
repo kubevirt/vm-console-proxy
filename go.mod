@@ -16,7 +16,7 @@ require (
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/utils v0.0.0-20231127182322-b307cd553661
 	kubevirt.io/api v1.1.1
-	kubevirt.io/client-go v1.2.0-beta.0 // TODO: update to a tag, once it is released
+	kubevirt.io/client-go v1.2.0-rc.0 // TODO: update to a tag, once it is released
 	sigs.k8s.io/yaml v1.4.0
 )
 
