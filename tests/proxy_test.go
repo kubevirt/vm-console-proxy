@@ -147,6 +147,44 @@ var _ = Describe("Kubevirt proxy", func() {
 				Expect(expireTime.Sub(expectedTime).Abs()).
 					To(BeNumerically("<=", 5*time.Second))
 			})
+
+			It("should cleanup when VM is deleted", func() {
+				By("getting a token to create ServiceAccount, Role and RoleBinding")
+				tokenUrl := getTokenUrl(vmName)
+				code, _, err := httpGet(tokenUrl, saToken, TestHttpClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(code).To(Equal(http.StatusOK))
+
+				By("testing that the resources exist")
+				resourceName := vmName + "-vnc-access"
+				_, err = ApiClient.CoreV1().ServiceAccounts(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = ApiClient.RbacV1().Roles(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = ApiClient.RbacV1().RoleBindings(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+				Expect(err).ToNot(HaveOccurred())
+
+				By("deleting VM and waiting for it to be deleted")
+				err = ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vmName, &metav1.DeleteOptions{})
+				Expect(err).ToNot(HaveOccurred())
+
+				Eventually(func() error {
+					_, err := ApiClient.VirtualMachine(testNamespace).Get(context.Background(), vmName, &metav1.GetOptions{})
+					return err
+				}, time.Minute, time.Second).Should(MatchError(errors.IsNotFound, "errors.IsNotFound"))
+
+				By("testing that resources have been cleaned up")
+				_, err = ApiClient.CoreV1().ServiceAccounts(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+				Expect(err).To(MatchError(errors.IsNotFound, "errors.IsNotFound"))
+
+				_, err = ApiClient.RbacV1().Roles(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+				Expect(err).To(MatchError(errors.IsNotFound, "errors.IsNotFound"))
+
+				_, err = ApiClient.RbacV1().RoleBindings(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
+				Expect(err).To(MatchError(errors.IsNotFound, "errors.IsNotFound"))
+			})
 		})
 	})
 
