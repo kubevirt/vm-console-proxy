@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
-	kubevirt "kubevirt.io/api/core"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
@@ -196,10 +195,10 @@ outerLoop:
 	return extras, nil
 }
 
-func (s *service) createResources(ctx context.Context, name string, vmMeta metav1.Object) error {
+func (s *service) createResources(ctx context.Context, name string, vm *kubevirtv1.VirtualMachine) error {
 	const appLabelValue = "vm-console-proxy"
 
-	namespace := vmMeta.GetNamespace()
+	namespace := vm.GetNamespace()
 	commonLabels := map[string]string{
 		AppKubernetesNameLabel:      appLabelValue,
 		AppKubernetesPartOfLabel:    appLabelValue,
@@ -208,10 +207,10 @@ func (s *service) createResources(ctx context.Context, name string, vmMeta metav
 	}
 
 	vmOwnerRef := metav1.OwnerReference{
-		APIVersion: kubevirt.GroupName,
-		Kind:       "VirtualMachine",
-		Name:       vmMeta.GetName(),
-		UID:        vmMeta.GetUID(),
+		APIVersion: kubevirtv1.VirtualMachineGroupVersionKind.GroupVersion().String(),
+		Kind:       kubevirtv1.VirtualMachineGroupVersionKind.Kind,
+		Name:       vm.GetName(),
+		UID:        vm.GetUID(),
 	}
 
 	serviceAccount, err := createOrUpdate[*core.ServiceAccount](
@@ -239,7 +238,7 @@ func (s *service) createResources(ctx context.Context, name string, vmMeta metav
 			foundObj.Rules = []rbac.PolicyRule{{
 				APIGroups:     []string{kubevirtv1.SubresourceGroupName},
 				Resources:     []string{"virtualmachineinstances/vnc"},
-				ResourceNames: []string{vmMeta.GetName()},
+				ResourceNames: []string{vm.GetName()},
 				Verbs:         []string{"get"},
 			}}
 		},
