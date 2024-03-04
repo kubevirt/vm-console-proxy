@@ -22,3 +22,8 @@ kubectl apply -f "https://github.com/kubevirt/vm-console-proxy/releases/latest/d
 
 ## API
 See the [API documentation](docs/api.md).
+
+### API Access Permissions
+
+The `token.kubevirt.io:generate` `ClusterRole` can be bound to users or service accounts to give
+them permission to call the API.
