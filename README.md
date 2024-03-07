@@ -27,3 +27,12 @@ See the [API documentation](docs/api.md).
 
 The `token.kubevirt.io:generate` `ClusterRole` can be bound to users or service accounts to give
 them permission to call the API.
+
+Here are example commands how to bind it to a user or a service account:
+```bash
+# Bind ClusterRole to a user
+kubectl create rolebinding "${ROLE_BINDING_NAME}" --clusterrole="token.kubevirt.io:generate" --user="${USER_NAME}"
+
+# Bind ClusterRole to a ServiceAccount
+kubectl create rolebinding "${ROLE_BINDING_NAME}" --clusterrole="token.kubevirt.io:generate" --serviceaccount="${SERVICE_ACCOUNT_NAME}"
+```
