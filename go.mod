@@ -7,8 +7,8 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/golang/mock v1.6.0
-	github.com/onsi/ginkgo/v2 v2.16.0
-	github.com/onsi/gomega v1.31.1
+	github.com/onsi/ginkgo/v2 v2.17.0
+	github.com/onsi/gomega v1.32.0
 	github.com/openshift/api v0.0.0-20240111203005-e04828eaf17a // release-4.15
 	github.com/openshift/library-go v0.0.0-20240111120724-db0c36cd2185 // release-4.15
 	k8s.io/api v0.29.3
@@ -76,7 +76,7 @@ require (
 	k8s.io/apiserver v0.29.3 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20231010175941-2dd684a91f00 // indirect
-	kubevirt.io/containerized-data-importer-api v1.58.1 // indirect
+	kubevirt.io/containerized-data-importer-api v1.58.2 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
