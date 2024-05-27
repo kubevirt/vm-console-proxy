@@ -1,23 +1,24 @@
+# TODO: Enable dependabot again when we update to golang 1.22 in downstream
 version: 2
-updates:
-  - package-ecosystem: "gomod"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    allow:
-      - dependency-type: "all"
-    groups:
-      production-dependencies:
-        dependency-type: "production"
-      development-dependencies:
-        dependency-type: "development"
-    open-pull-requests-limit: 3
-    labels:
-      - "release-note-none"
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"  
-    open-pull-requests-limit: 3
-    labels:
-      - "release-note-none"
+updates: []
+#  - package-ecosystem: "gomod"
+#    directory: "/"
+#    schedule:
+#      interval: "daily"
+#    allow:
+#      - dependency-type: "all"
+#    groups:
+#      production-dependencies:
+#        dependency-type: "production"
+#      development-dependencies:
+#        dependency-type: "development"
+#    open-pull-requests-limit: 3
+#    labels:
+#      - "release-note-none"
+#  - package-ecosystem: "github-actions"
+#    directory: "/"
+#    schedule:
+#      interval: "weekly"
+#    open-pull-requests-limit: 3
+#    labels:
+#      - "release-note-none"
