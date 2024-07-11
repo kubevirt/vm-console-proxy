@@ -36,3 +36,6 @@ kubectl create rolebinding "${ROLE_BINDING_NAME}" --clusterrole="token.kubevirt.
 # Bind ClusterRole to a ServiceAccount
 kubectl create rolebinding "${ROLE_BINDING_NAME}" --clusterrole="token.kubevirt.io:generate" --serviceaccount="${SERVICE_ACCOUNT_NAME}"
 ```
+
+## Development
+To develop locally, set the environment variables `IMG_REPOSITORY` and `IMG_TAG` (or the variable `IMG`) to your development repository. Then run `make build-container push-container` to build the current code and push it into your development repository. Finally, run `make deploy` to install the development version.
