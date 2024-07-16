@@ -16,6 +16,8 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 KUSTOMIZE_VERSION ?= v4.5.7
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 
+KUBECONFIG ?= ~/.kube/config
+
 .PHONY:build
 build: fmt vet
 	go build -o bin/console main.go
@@ -56,7 +58,7 @@ test:
 
 .PHONY: functest
 functest:
-	go test -v -timeout 0 -count 1 ./tests/...
+	KUBECONFIG=$(KUBECONFIG) go test -v -timeout 0 -count 1 ./tests/...
 
 .PHONY: fmt
 fmt:
