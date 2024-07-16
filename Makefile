@@ -24,11 +24,14 @@ build: fmt vet
 
 .PHONY: build-container
 build-container: fmt vet test
-	podman build -t ${IMG} .
+	podman manifest rm ${IMG} || true && \
+	podman build --build-arg TARGET_ARCH=amd64 --manifest=${IMG} . && \
+	podman build --build-arg TARGET_ARCH=s390x --manifest=${IMG} . && \
+	podman build --build-arg TARGET_ARCH=arm64 --manifest=${IMG} .
 
 .PHONY: push-container
 push-container:
-	podman push ${IMG}
+	podman manifest push ${IMG}
 
 .PHONY: manifests
 manifests:
