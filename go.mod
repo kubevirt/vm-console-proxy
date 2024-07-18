@@ -9,8 +9,8 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/onsi/ginkgo/v2 v2.17.2
 	github.com/onsi/gomega v1.33.1
-	github.com/openshift/api v0.0.0-20240111203005-e04828eaf17a // release-4.15
-	github.com/openshift/library-go v0.0.0-20240111120724-db0c36cd2185 // release-4.15
+	github.com/openshift/api v0.0.0-20240717221938-8da8de571496 // release-4.17
+	github.com/openshift/library-go v0.0.0-20240715191351-e0aa70d55678 // release-4.17
 	k8s.io/api v0.30.1
 	k8s.io/apimachinery v0.30.1
 	k8s.io/client-go v0.30.1
@@ -51,7 +51,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
-	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1 // indirect
+	github.com/openshift/client-go v0.0.0-20240528061634-b054aa794d87 // indirect
 	github.com/openshift/custom-resource-status v1.1.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.73.1 // indirect
