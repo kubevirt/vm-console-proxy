@@ -97,18 +97,18 @@ var _ = Describe("Kubevirt proxy", func() {
 
 			BeforeEach(func() {
 				vm := testVm("test-vm-")
-				vm, err := ApiClient.VirtualMachine(testNamespace).Create(context.Background(), vm)
+				vm, err := ApiClient.VirtualMachine(testNamespace).Create(context.Background(), vm, metav1.CreateOptions{})
 				Expect(err).ToNot(HaveOccurred())
 
 				DeferCleanup(func() {
-					err := ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vm.Name, &metav1.DeleteOptions{})
+					err := ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vm.Name, metav1.DeleteOptions{})
 					if err != nil && !errors.IsNotFound(err) {
 						Expect(err).ToNot(HaveOccurred())
 					}
 				})
 
 				Eventually(func() error {
-					_, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, &metav1.GetOptions{})
+					_, err := ApiClient.VirtualMachineInstance(vm.Namespace).Get(context.Background(), vm.Name, metav1.GetOptions{})
 					return err
 				}, 10*time.Minute, time.Second).Should(Succeed())
 
@@ -168,11 +168,11 @@ var _ = Describe("Kubevirt proxy", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				By("deleting VM and waiting for it to be deleted")
-				err = ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vmName, &metav1.DeleteOptions{})
+				err = ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vmName, metav1.DeleteOptions{})
 				Expect(err).ToNot(HaveOccurred())
 
 				Eventually(func() error {
-					_, err := ApiClient.VirtualMachine(testNamespace).Get(context.Background(), vmName, &metav1.GetOptions{})
+					_, err := ApiClient.VirtualMachine(testNamespace).Get(context.Background(), vmName, metav1.GetOptions{})
 					return err
 				}, time.Minute, time.Second).Should(MatchError(errors.IsNotFound, "errors.IsNotFound"))
 
@@ -193,11 +193,11 @@ var _ = Describe("Kubevirt proxy", func() {
 		It("should be able to access VMI/vnc endpoint using token", func() {
 			vm := testVm("test-vm-")
 			vm.Spec.Running = pointer.Bool(false)
-			vm, err := ApiClient.VirtualMachine(testNamespace).Create(context.Background(), vm)
+			vm, err := ApiClient.VirtualMachine(testNamespace).Create(context.Background(), vm, metav1.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			DeferCleanup(func() {
-				err := ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vm.Name, &metav1.DeleteOptions{})
+				err := ApiClient.VirtualMachine(testNamespace).Delete(context.Background(), vm.Name, metav1.DeleteOptions{})
 				if err != nil && !errors.IsNotFound(err) {
 					Expect(err).ToNot(HaveOccurred())
 				}

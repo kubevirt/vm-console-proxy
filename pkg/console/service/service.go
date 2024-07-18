@@ -62,7 +62,7 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	vm, err := s.kubevirtClient.VirtualMachine(params.namespace).Get(request.Request.Context(), params.name, &metav1.GetOptions{})
+	vm, err := s.kubevirtClient.VirtualMachine(params.namespace).Get(request.Request.Context(), params.name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			_ = response.WriteError(http.StatusNotFound, fmt.Errorf("VirtualMachine does not exist: %w", err))
@@ -363,7 +363,7 @@ func createOrUpdate[PT interface {
 func retryOnConflict[T any](ctx context.Context, backoff wait.Backoff, fn func() (T, error)) (T, error) {
 	var result T
 	var lastErr error
-	err := wait.ExponentialBackoffWithContext(ctx, backoff, func() (bool, error) {
+	err := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
 		var err error
 		result, err = fn()
 
@@ -377,7 +377,7 @@ func retryOnConflict[T any](ctx context.Context, backoff wait.Backoff, fn func()
 			return false, err
 		}
 	})
-	if err == wait.ErrWaitTimeout {
+	if wait.Interrupted(err) {
 		return result, lastErr
 	}
 	return result, err
