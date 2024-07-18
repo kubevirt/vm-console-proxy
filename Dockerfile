@@ -7,7 +7,7 @@ ENV PATH=$PATH:/usr/local/go/bin
 
 RUN microdnf install -y make tar gzip which && microdnf clean all
 
-RUN . ${ENVFILE}; curl -L https://go.dev/dl/go1.21.6.linux-${ARCH}.tar.gz | tar -C /usr/local -xzf -
+RUN . ${ENVFILE}; curl -L https://go.dev/dl/go1.22.4.linux-${ARCH}.tar.gz | tar -C /usr/local -xzf -
 
 WORKDIR /workspace
 # Copy the Go Modules manifests and vendor directory
