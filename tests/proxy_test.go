@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path"
 	"time"
@@ -117,6 +118,11 @@ var _ = Describe("Kubevirt proxy", func() {
 
 			It("should get token with default duration", func() {
 				tokenUrl := getTokenUrl(vmName)
+
+				// Default duration is 10 minutes.
+				// Removing smaller intervals than seconds, because the timestamp in JSON is only accurate to seconds.
+				expectedExpirationTimestamp := time.Now().Add(10 * time.Minute).Truncate(time.Second)
+
 				code, body, err := httpGet(tokenUrl, saToken, TestHttpClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(code).To(Equal(http.StatusOK))
@@ -124,10 +130,17 @@ var _ = Describe("Kubevirt proxy", func() {
 				tokenResponse := &api.TokenResponse{}
 				Expect(json.Unmarshal(body, tokenResponse)).To(Succeed())
 				Expect(tokenResponse.Token).ToNot(BeEmpty())
+
+				Expect(tokenResponse.ExpirationTimestamp.Time.Before(expectedExpirationTimestamp)).To(BeFalse(),
+					fmt.Sprintf("expiration timestamp %v, should be equal or later than %v", tokenResponse.ExpirationTimestamp.Time, expectedExpirationTimestamp),
+				)
 			})
 
 			It("should get token with specified duration", func() {
 				tokenUrl := getTokenUrl(vmName)
+
+				// Removing smaller intervals than seconds, because the timestamp in JSON is only accurate to seconds.
+				expectedExpirationTimestamp := time.Now().Add(24 * time.Hour).Truncate(time.Second)
 
 				code, body, err := httpGet(tokenUrl+"?duration=24h", saToken, TestHttpClient)
 				Expect(err).ToNot(HaveOccurred())
@@ -136,6 +149,9 @@ var _ = Describe("Kubevirt proxy", func() {
 				tokenResponse := &api.TokenResponse{}
 				Expect(json.Unmarshal(body, tokenResponse)).To(Succeed())
 				Expect(tokenResponse.Token).ToNot(BeEmpty())
+				Expect(tokenResponse.ExpirationTimestamp.Time.Before(expectedExpirationTimestamp)).To(BeFalse(),
+					fmt.Sprintf("expiration timestamp %v, should be equal or later than %v", tokenResponse.ExpirationTimestamp.Time, expectedExpirationTimestamp),
+				)
 
 				claims := &jwt.RegisteredClaims{}
 				_, _, err = jwt.NewParser().ParseUnverified(tokenResponse.Token, claims)
