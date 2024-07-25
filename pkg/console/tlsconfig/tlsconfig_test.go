@@ -149,21 +149,13 @@ var _ = Describe("TlsConfig", func() {
 			originalConfig, err := configWatch.GetConfig()
 			Expect(err).ToNot(HaveOccurred())
 
-			func() {
-				configFile, err := os.Create(tlsConfigPath)
-				Expect(err).ToNot(HaveOccurred())
-				defer configFile.Close()
-
-				tlsProfile := &v1alpha1.TlsSecurityProfile{
-					Type:   ocpconfigv1.TLSProfileModernType,
-					Modern: &ocpconfigv1.ModernTLSProfile{},
-				}
-				tlsProfileYaml, err := yaml.Marshal(tlsProfile)
-				Expect(err).ToNot(HaveOccurred())
-
-				_, err = configFile.Write(tlsProfileYaml)
-				Expect(err).ToNot(HaveOccurred())
-			}()
+			tlsProfile := &v1alpha1.TlsSecurityProfile{
+				Type:   ocpconfigv1.TLSProfileModernType,
+				Modern: &ocpconfigv1.ModernTLSProfile{},
+			}
+			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(os.WriteFile(tlsConfigPath, tlsProfileYaml, 0666)).To(Succeed())
 
 			mockWatch.Trigger(configDir)
 
@@ -178,13 +170,7 @@ var _ = Describe("TlsConfig", func() {
 		})
 
 		It("should fail if config is invalid", func() {
-			func() {
-				configFile, err := os.Create(tlsConfigPath)
-				Expect(err).ToNot(HaveOccurred())
-				defer configFile.Close()
-				_, err = configFile.WriteString("This is definitely not a valid YAML")
-				Expect(err).ToNot(HaveOccurred())
-			}()
+			Expect(os.WriteFile(tlsConfigPath, []byte("This is definitely not a valid YAML"), 0666)).To(Succeed())
 
 			mockWatch.Trigger(configDir)
 
@@ -197,21 +183,8 @@ var _ = Describe("TlsConfig", func() {
 			certBytes, keyBytes, err := cert.GenerateSelfSignedCertKey(newDnsName, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 
-			func() {
-				certFile, err := os.Create(certPath)
-				Expect(err).ToNot(HaveOccurred())
-				defer certFile.Close()
-
-				_, err = certFile.Write(certBytes)
-				Expect(err).ToNot(HaveOccurred())
-
-				keyFile, err := os.Create(keyPath)
-				Expect(err).ToNot(HaveOccurred())
-				defer keyFile.Close()
-
-				_, err = keyFile.Write(keyBytes)
-				Expect(err).ToNot(HaveOccurred())
-			}()
+			Expect(os.WriteFile(certPath, certBytes, 0666)).To(Succeed())
+			Expect(os.WriteFile(keyPath, keyBytes, 0666)).To(Succeed())
 
 			mockWatch.Trigger(certAndKeyDir)
 
@@ -222,14 +195,7 @@ var _ = Describe("TlsConfig", func() {
 		})
 
 		It("should fail if certificate is invalid", func() {
-			func() {
-				certFile, err := os.Create(certPath)
-				Expect(err).ToNot(HaveOccurred())
-				defer certFile.Close()
-
-				_, err = certFile.WriteString("This is invalid certificate file")
-				Expect(err).ToNot(HaveOccurred())
-			}()
+			Expect(os.WriteFile(certPath, []byte("This is invalid certificate file"), 0666)).To(Succeed())
 
 			mockWatch.Trigger(certAndKeyDir)
 
