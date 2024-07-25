@@ -13,7 +13,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	ocpconfigv1 "github.com/openshift/api/config/v1"
 	"k8s.io/client-go/util/cert"
 	"sigs.k8s.io/yaml"
 
@@ -28,6 +27,9 @@ var _ = Describe("TlsConfig", func() {
 	)
 
 	var (
+		testCiphersNames []string
+		testCipherIds    []uint16
+
 		configDir     string
 		tlsConfigPath string
 
@@ -42,9 +44,27 @@ var _ = Describe("TlsConfig", func() {
 	)
 
 	BeforeEach(func() {
-		tlsProfile := &v1alpha1.TlsSecurityProfile{
-			Type:         ocpconfigv1.TLSProfileIntermediateType,
-			Intermediate: &ocpconfigv1.IntermediateTLSProfile{},
+		testCiphersNames = []string{
+			"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+			"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+		}
+
+		testCipherIds = []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+		}
+
+		tlsProfile := &v1alpha1.TlsProfile{
+			Ciphers:       testCiphersNames,
+			MinTLSVersion: v1alpha1.VersionTLS12,
 		}
 		tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 		Expect(err).ToNot(HaveOccurred())
@@ -101,15 +121,43 @@ var _ = Describe("TlsConfig", func() {
 		config, err := configWatch.GetConfig()
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(config.CipherSuites).To(ConsistOf(
-			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-		))
+		Expect(config.CipherSuites).To(ConsistOf(testCipherIds))
 		Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
+	})
+
+	It("should use default ciphers, if ciphers are not sepcified", func() {
+		tlsConfig := &v1alpha1.TlsProfile{
+			MinTLSVersion: v1alpha1.VersionTLS12,
+		}
+		tlsConfigYaml, err := yaml.Marshal(tlsConfig)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(tlsConfigPath, tlsConfigYaml, 0666)).To(Succeed())
+
+		configWatch.Reload()
+
+		config, err := configWatch.GetConfig()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Testing for nil specifically, because nil means default configuration.
+		Expect(config.CipherSuites).To(BeNil())
+		Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
+	})
+
+	It("should use default tls version, if MinTLSVersion is not specified", func() {
+		tlsConfig := &v1alpha1.TlsProfile{
+			Ciphers: testCiphersNames,
+		}
+		tlsConfigYaml, err := yaml.Marshal(tlsConfig)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(tlsConfigPath, tlsConfigYaml, 0666)).To(Succeed())
+
+		configWatch.Reload()
+
+		config, err := configWatch.GetConfig()
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(config.CipherSuites).To(ConsistOf(testCipherIds))
+		Expect(config.MinVersion).To(BeZero())
 	})
 
 	It("should use default config if file does not exist", func() {
@@ -119,7 +167,8 @@ var _ = Describe("TlsConfig", func() {
 		config, err := configWatch.GetConfig()
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(config.CipherSuites).To(BeEmpty())
+		// Testing for nil specifically, because nil means default configuration.
+		Expect(config.CipherSuites).To(BeNil())
 		Expect(config.MinVersion).To(BeZero())
 	})
 
@@ -149,9 +198,13 @@ var _ = Describe("TlsConfig", func() {
 			originalConfig, err := configWatch.GetConfig()
 			Expect(err).ToNot(HaveOccurred())
 
-			tlsProfile := &v1alpha1.TlsSecurityProfile{
-				Type:   ocpconfigv1.TLSProfileModernType,
-				Modern: &ocpconfigv1.ModernTLSProfile{},
+			tlsProfile := &v1alpha1.TlsProfile{
+				Ciphers: []string{
+					"TLS_AES_128_GCM_SHA256",
+					"TLS_AES_256_GCM_SHA384",
+					"TLS_CHACHA20_POLY1305_SHA256",
+				},
+				MinTLSVersion: v1alpha1.VersionTLS13,
 			}
 			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 			Expect(err).ToNot(HaveOccurred())
@@ -165,7 +218,11 @@ var _ = Describe("TlsConfig", func() {
 			Expect(config.CipherSuites).ToNot(Equal(originalConfig.CipherSuites))
 			Expect(config.MinVersion).ToNot(Equal(originalConfig.MinVersion))
 
-			Expect(config.CipherSuites).To(BeEmpty())
+			Expect(config.CipherSuites).To(ConsistOf(
+				tls.TLS_AES_128_GCM_SHA256,
+				tls.TLS_AES_256_GCM_SHA384,
+				tls.TLS_CHACHA20_POLY1305_SHA256,
+			))
 			Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS13)))
 		})
 
