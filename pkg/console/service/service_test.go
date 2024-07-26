@@ -25,7 +25,7 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	api "github.com/kubevirt/vm-console-proxy/api/v1"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 	fakeAuth "github.com/kubevirt/vm-console-proxy/pkg/console/authConfig/fake"
 )

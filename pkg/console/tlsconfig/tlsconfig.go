@@ -13,7 +13,7 @@ import (
 	"k8s.io/client-go/util/cert"
 	"kubevirt.io/client-go/log"
 
-	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/api/v1"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
 )
@@ -176,7 +176,7 @@ func loadCipherSuitesAndMinVersion(configPath string) ([]uint16, uint16, error) 
 	return ciphers, minVersion, nil
 }
 
-func loadTlsProfile(profilePath string) (*v1alpha1.TlsProfile, error) {
+func loadTlsProfile(profilePath string) (*v1.TlsProfile, error) {
 	file, err := os.Open(profilePath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
@@ -184,7 +184,7 @@ func loadTlsProfile(profilePath string) (*v1alpha1.TlsProfile, error) {
 	// It's ok to ignore error on close, because the file is opened of reading
 	defer func() { _ = file.Close() }()
 
-	result := &v1alpha1.TlsProfile{}
+	result := &v1.TlsProfile{}
 	err = yaml.NewYAMLToJSONDecoder(file).Decode(result)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding tls config: %w", err)
@@ -214,17 +214,17 @@ outerLoop:
 	return result, nil
 }
 
-func getMinTlsVersion(version v1alpha1.TLSProtocolVersion) (uint16, error) {
+func getMinTlsVersion(version v1.TLSProtocolVersion) (uint16, error) {
 	switch version {
 	case "":
 		return 0, nil
-	case v1alpha1.VersionTLS10:
+	case v1.VersionTLS10:
 		return tls.VersionTLS10, nil
-	case v1alpha1.VersionTLS11:
+	case v1.VersionTLS11:
 		return tls.VersionTLS11, nil
-	case v1alpha1.VersionTLS12:
+	case v1.VersionTLS12:
 		return tls.VersionTLS12, nil
-	case v1alpha1.VersionTLS13:
+	case v1.VersionTLS13:
 		return tls.VersionTLS13, nil
 	default:
 		return 0, fmt.Errorf("unsupported TLS version: %s", version)

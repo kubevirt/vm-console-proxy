@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/emicklei/go-restful/v3"
-	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	api "github.com/kubevirt/vm-console-proxy/api/v1"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -26,7 +26,7 @@ const (
 	keyName        = "tls.key"
 
 	configDir      = "/config"
-	TlsProfileFile = "tls-profile-v1alpha1.yaml"
+	TlsProfileFile = "tls-profile-v1.yaml"
 )
 
 func Run() error {

@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/util/cert"
 	"sigs.k8s.io/yaml"
 
-	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/api/v1"
 	fakeAuth "github.com/kubevirt/vm-console-proxy/pkg/console/authConfig/fake"
 	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
 )
@@ -62,9 +62,9 @@ var _ = Describe("TlsConfig", func() {
 			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 		}
 
-		tlsProfile := &v1alpha1.TlsProfile{
+		tlsProfile := &v1.TlsProfile{
 			Ciphers:       testCiphersNames,
-			MinTLSVersion: v1alpha1.VersionTLS12,
+			MinTLSVersion: v1.VersionTLS12,
 		}
 		tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 		Expect(err).ToNot(HaveOccurred())
@@ -126,8 +126,8 @@ var _ = Describe("TlsConfig", func() {
 	})
 
 	It("should use default ciphers, if ciphers are not sepcified", func() {
-		tlsConfig := &v1alpha1.TlsProfile{
-			MinTLSVersion: v1alpha1.VersionTLS12,
+		tlsConfig := &v1.TlsProfile{
+			MinTLSVersion: v1.VersionTLS12,
 		}
 		tlsConfigYaml, err := yaml.Marshal(tlsConfig)
 		Expect(err).ToNot(HaveOccurred())
@@ -144,7 +144,7 @@ var _ = Describe("TlsConfig", func() {
 	})
 
 	It("should use default tls version, if MinTLSVersion is not specified", func() {
-		tlsConfig := &v1alpha1.TlsProfile{
+		tlsConfig := &v1.TlsProfile{
 			Ciphers: testCiphersNames,
 		}
 		tlsConfigYaml, err := yaml.Marshal(tlsConfig)
@@ -198,13 +198,13 @@ var _ = Describe("TlsConfig", func() {
 			originalConfig, err := configWatch.GetConfig()
 			Expect(err).ToNot(HaveOccurred())
 
-			tlsProfile := &v1alpha1.TlsProfile{
+			tlsProfile := &v1.TlsProfile{
 				Ciphers: []string{
 					"TLS_AES_128_GCM_SHA256",
 					"TLS_AES_256_GCM_SHA384",
 					"TLS_CHACHA20_POLY1305_SHA256",
 				},
-				MinTLSVersion: v1alpha1.VersionTLS13,
+				MinTLSVersion: v1.VersionTLS13,
 			}
 			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 			Expect(err).ToNot(HaveOccurred())

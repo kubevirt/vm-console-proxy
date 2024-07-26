@@ -21,7 +21,7 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/api/v1"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 )
 
@@ -85,7 +85,7 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	_ = response.WriteAsJson(&v1alpha1.TokenResponse{
+	_ = response.WriteAsJson(&v1.TokenResponse{
 		Token:               tokenRequestStatus.Token,
 		ExpirationTimestamp: tokenRequestStatus.ExpirationTimestamp,
 	})

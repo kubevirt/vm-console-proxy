@@ -4,7 +4,7 @@
 
 A temporary token can be generated using:
 ```
-GET /apis/token.kubevirt.io/v1alpha1/namespaces/${VMI_NAMESPACE}/virtualmachines/${VMI_NAME}/vnc
+GET /apis/token.kubevirt.io/v1/namespaces/${VMI_NAMESPACE}/virtualmachines/${VMI_NAME}/vnc
 ``` 
 Where `${VMI_NAMESPACE}` and `${VMI_NAME}` are the namespace
 and name of a running VMI.
@@ -28,7 +28,7 @@ Result is a JSON object containing the token:
 ### Example
 ```bash
 curl --header "Authorization: Bearer ${KUBERNETES_USER_TOKEN}" \
-     "https://${K8S_API_URL}/apis/token.kubevirt.io/v1alpha1/namespaces/${VMI_NAMESPACE}/virtualmachines/${VMI_NAME}/vnc?duration=${DURATION}"
+     "https://${K8S_API_URL}/apis/token.kubevirt.io/v1/namespaces/${VMI_NAMESPACE}/virtualmachines/${VMI_NAME}/vnc?duration=${DURATION}"
 ```
 
 In this example, we use a bearer token to authenticate the user with the Kubernetes API server.
