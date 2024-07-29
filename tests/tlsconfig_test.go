@@ -10,8 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
-	ocpconfigv1 "github.com/openshift/api/config/v1"
+	api "github.com/kubevirt/vm-console-proxy/api/v1"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -20,35 +19,19 @@ import (
 
 var _ = Describe("TLS config", func() {
 
-	It("should read config from ConfigMap", func() {
-		Eventually(func(g Gomega) {
-			connState, err := getTlsConnectionState()
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(connState.CipherSuite).To(BeElementOf(
-				tls.TLS_AES_128_GCM_SHA256,
-				tls.TLS_AES_256_GCM_SHA384,
-				tls.TLS_CHACHA20_POLY1305_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-			))
-			Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS12))
-		}, 1*time.Minute, time.Second).Should(Succeed())
-	})
-
 	Context("with changed ConfigMap", func() {
 		AfterEach(func() {
 			RevertToOriginalConfigMap()
 		})
 
 		It("should reload config at runtime", func() {
-			tlsProfile := &api.TlsSecurityProfile{
-				Type:   ocpconfigv1.TLSProfileModernType,
-				Modern: &ocpconfigv1.ModernTLSProfile{},
+			tlsProfile := &api.TlsProfile{
+				Ciphers: []string{
+					"TLS_AES_128_GCM_SHA256",
+					"TLS_AES_256_GCM_SHA384",
+					"TLS_CHACHA20_POLY1305_SHA256",
+				},
+				MinTLSVersion: api.VersionTLS13,
 			}
 
 			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
@@ -103,18 +86,13 @@ var _ = Describe("TLS config", func() {
 			}, 1*time.Minute, time.Second).Should(Succeed())
 
 			// Recreate file
-			tlsProfile := &api.TlsSecurityProfile{
-				Type: ocpconfigv1.TLSProfileCustomType,
-				Custom: &ocpconfigv1.CustomTLSProfile{
-					TLSProfileSpec: ocpconfigv1.TLSProfileSpec{
-						Ciphers: []string{
-							"TLS_AES_128_GCM_SHA256",
-							"TLS_AES_256_GCM_SHA384",
-							"TLS_CHACHA20_POLY1305_SHA256",
-						},
-						MinTLSVersion: ocpconfigv1.VersionTLS13,
-					},
+			tlsProfile := &api.TlsProfile{
+				Ciphers: []string{
+					"TLS_AES_128_GCM_SHA256",
+					"TLS_AES_256_GCM_SHA384",
+					"TLS_CHACHA20_POLY1305_SHA256",
 				},
+				MinTLSVersion: api.VersionTLS13,
 			}
 
 			tlsProfileYaml, err := yaml.Marshal(tlsProfile)

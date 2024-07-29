@@ -21,7 +21,7 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/api/v1"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 )
 
@@ -79,14 +79,15 @@ func (s *service) TokenHandler(request *restful.Request, response *restful.Respo
 		return
 	}
 
-	token, err := s.requestToken(request.Request.Context(), vm.Namespace, resourceName, params.duration)
+	tokenRequestStatus, err := s.requestToken(request.Request.Context(), vm.Namespace, resourceName, params.duration)
 	if err != nil {
 		_ = response.WriteError(http.StatusInternalServerError, fmt.Errorf("failed to request token: %w", err))
 		return
 	}
 
-	_ = response.WriteAsJson(&v1alpha1.TokenResponse{
-		Token: token,
+	_ = response.WriteAsJson(&v1.TokenResponse{
+		Token:               tokenRequestStatus.Token,
+		ExpirationTimestamp: tokenRequestStatus.ExpirationTimestamp,
 	})
 }
 
@@ -272,7 +273,7 @@ func (s *service) createResources(ctx context.Context, name string, vm *kubevirt
 	return nil
 }
 
-func (s *service) requestToken(ctx context.Context, serviceAccountNamespace string, serviceAccountName string, duration time.Duration) (string, error) {
+func (s *service) requestToken(ctx context.Context, serviceAccountNamespace string, serviceAccountName string, duration time.Duration) (*authnv1.TokenRequestStatus, error) {
 	durationSeconds := int64(duration.Seconds())
 	tokenRequest := &authnv1.TokenRequest{
 		Spec: authnv1.TokenRequestSpec{
@@ -289,9 +290,9 @@ func (s *service) requestToken(ctx context.Context, serviceAccountNamespace stri
 		metav1.CreateOptions{},
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return tokenRequest.Status.Token, nil
+	return &tokenRequest.Status, nil
 }
 
 type tokenRequestParams struct {

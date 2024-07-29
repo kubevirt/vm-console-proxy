@@ -3,6 +3,4 @@ kind: ConfigMap
 metadata:
   name: vm-console-proxy
 data:
-  tls-profile-v1alpha1.yaml: |
-    type: Intermediate
-    intermediate: {}
+  tls-profile-v1.yaml: "{}"

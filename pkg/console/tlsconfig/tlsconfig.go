@@ -9,13 +9,11 @@ import (
 	"strings"
 	"sync"
 
-	ocpconfigv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/library-go/pkg/crypto"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/util/cert"
 	"kubevirt.io/client-go/log"
 
-	"github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	"github.com/kubevirt/vm-console-proxy/api/v1"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
 )
@@ -120,10 +118,21 @@ func (w *watch) reloadTlsProfile() {
 	{
 		// TODO: only compute human readable strings on debug level.
 		// For now, there is no easy way to test for logging level.
-		cipherNames := crypto.CipherSuitesToNamesOrDie(ciphers)
-		minVersionName := crypto.TLSVersionToNameOrDie(minVersion)
-		log.Log.V(1).Infof("Set min TLS version: %s", minVersionName)
-		log.Log.V(1).Infof("Set ciphers: %s", strings.Join(cipherNames, ", "))
+		if minVersion == 0 {
+			log.Log.V(1).Infof("Min TLS version was not set in the config file. Using default.")
+		} else {
+			log.Log.V(1).Infof("Set min TLS version: %s", tls.VersionName(minVersion))
+		}
+
+		if ciphers == nil {
+			log.Log.V(1).Infof("Ciphers were not set in the config file. Using default.")
+		} else {
+			cipherNames := make([]string, 0, len(ciphers))
+			for _, cipher := range ciphers {
+				cipherNames = append(cipherNames, tls.CipherSuiteName(cipher))
+			}
+			log.Log.V(1).Infof("Set ciphers: %s", strings.Join(cipherNames, ", "))
+		}
 	}
 
 	w.ciphers = ciphers
@@ -154,15 +163,20 @@ func loadCipherSuitesAndMinVersion(configPath string) ([]uint16, uint16, error) 
 		return nil, 0, fmt.Errorf("could not load tls config: %w", err)
 	}
 
-	ciphers, minVersion, err := getTlsCiphersAndMinVersion(tlsProfile)
+	ciphers, err := getCipherSuites(tlsProfile.Ciphers)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("could not get cipher suite numbers: %w", err)
+	}
+
+	minVersion, err := getMinTlsVersion(tlsProfile.MinTLSVersion)
+	if err != nil {
+		return nil, 0, fmt.Errorf("could not get minimum TLS version: %w", err)
 	}
 
 	return ciphers, minVersion, nil
 }
 
-func loadTlsProfile(profilePath string) (*v1alpha1.TlsSecurityProfile, error) {
+func loadTlsProfile(profilePath string) (*v1.TlsProfile, error) {
 	file, err := os.Open(profilePath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
@@ -170,7 +184,7 @@ func loadTlsProfile(profilePath string) (*v1alpha1.TlsSecurityProfile, error) {
 	// It's ok to ignore error on close, because the file is opened of reading
 	defer func() { _ = file.Close() }()
 
-	result := &v1alpha1.TlsSecurityProfile{}
+	result := &v1.TlsProfile{}
 	err = yaml.NewYAMLToJSONDecoder(file).Decode(result)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding tls config: %w", err)
@@ -178,44 +192,43 @@ func loadTlsProfile(profilePath string) (*v1alpha1.TlsSecurityProfile, error) {
 	return result, nil
 }
 
-func getTlsCiphersAndMinVersion(tlsProfile *v1alpha1.TlsSecurityProfile) ([]uint16, uint16, error) {
-	var profile *ocpconfigv1.TLSProfileSpec
-	if tlsProfile.Type == ocpconfigv1.TLSProfileCustomType {
-		if tlsProfile.Custom == nil {
-			return nil, 0, fmt.Errorf("tls profile \"custom\" field is nil")
-		}
-		profile = &tlsProfile.Custom.TLSProfileSpec
-	} else {
-		var exists bool
-		profile, exists = ocpconfigv1.TLSProfiles[tlsProfile.Type]
-		if !exists {
-			return nil, 0, fmt.Errorf("unknown profile type: %s", tlsProfile.Type)
-		}
+func getCipherSuites(cipherNames []string) ([]uint16, error) {
+	if len(cipherNames) == 0 {
+		// nil value has means default cipher suites will be used
+		return nil, nil
 	}
 
-	ciphers := getCipherSuites(profile)
-	minVersion, err := crypto.TLSVersion(string(profile.MinTLSVersion))
-	if err != nil {
-		return nil, 0, err
+	result := make([]uint16, 0, len(cipherNames))
+
+outerLoop:
+	for _, cipherName := range cipherNames {
+		for _, cipherSuite := range tls.CipherSuites() {
+			if cipherName == cipherSuite.Name {
+				result = append(result, cipherSuite.ID)
+				continue outerLoop
+			}
+		}
+		return nil, fmt.Errorf("unknown cipher suite: %v", cipherName)
 	}
 
-	return ciphers, minVersion, nil
+	return result, nil
 }
 
-func getCipherSuites(profileSpec *ocpconfigv1.TLSProfileSpec) []uint16 {
-	tlsCiphers := make(map[string]*tls.CipherSuite, len(tls.CipherSuites()))
-	for _, suite := range tls.CipherSuites() {
-		tlsCiphers[suite.Name] = suite
+func getMinTlsVersion(version v1.TLSProtocolVersion) (uint16, error) {
+	switch version {
+	case "":
+		return 0, nil
+	case v1.VersionTLS10:
+		return tls.VersionTLS10, nil
+	case v1.VersionTLS11:
+		return tls.VersionTLS11, nil
+	case v1.VersionTLS12:
+		return tls.VersionTLS12, nil
+	case v1.VersionTLS13:
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf("unsupported TLS version: %s", version)
 	}
-
-	cipherIds := make([]uint16, 0, len(profileSpec.Ciphers))
-	for _, ianaCipher := range crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers) {
-		if cipher, found := tlsCiphers[ianaCipher]; found {
-			cipherIds = append(cipherIds, cipher.ID)
-		}
-	}
-
-	return cipherIds
 }
 
 func LoadCertificates(certPath, keyPath string) (*tls.Certificate, error) {

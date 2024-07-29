@@ -1,6 +1,6 @@
-package v1alpha1
+package v1
 
 const (
 	Group   = "token.kubevirt.io"
-	Version = "v1alpha1"
+	Version = "v1"
 )

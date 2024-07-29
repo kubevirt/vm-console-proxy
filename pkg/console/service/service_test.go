@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -24,7 +25,7 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	api "github.com/kubevirt/vm-console-proxy/api/v1"
 	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 	fakeAuth "github.com/kubevirt/vm-console-proxy/pkg/console/authConfig/fake"
 )
@@ -51,6 +52,8 @@ var _ = Describe("Service", func() {
 		request  *restful.Request
 		response *restful.Response
 		recorder *httptest.ResponseRecorder
+
+		testExpirationTimestamp metav1.Time
 	)
 
 	BeforeEach(func() {
@@ -103,10 +106,14 @@ var _ = Describe("Service", func() {
 			return true, sar, nil
 		})
 
+		testExpirationTimestamp = metav1.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC)
+
 		apiClient.Fake.PrependReactor("create", "serviceaccounts/token", func(action k8stesting.Action) (bool, runtime.Object, error) {
 			createAction := action.(k8stesting.CreateAction)
 			tokenRequest := createAction.GetObject().(*authnv1.TokenRequest)
 			tokenRequest.Status.Token = testToken
+			tokenRequest.Status.ExpirationTimestamp = testExpirationTimestamp
+
 			return true, tokenRequest, nil
 		})
 
@@ -281,6 +288,7 @@ var _ = Describe("Service", func() {
 		Expect(json.NewDecoder(recorder.Body).Decode(tokenResponse)).To(Succeed())
 
 		Expect(tokenResponse.Token).To(Equal(testToken))
+		Expect(&tokenResponse.ExpirationTimestamp).To(Satisfy(testExpirationTimestamp.Equal))
 	})
 
 	It("should fail if duration parameter fails to parse", func() {

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/kubevirt/vm-console-proxy/api/v1alpha1"
+	api "github.com/kubevirt/vm-console-proxy/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	core "k8s.io/api/core/v1"
