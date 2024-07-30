@@ -25,9 +25,9 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	api "github.com/kubevirt/vm-console-proxy/api/v1"
-	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
-	fakeAuth "github.com/kubevirt/vm-console-proxy/pkg/console/authConfig/fake"
+	api "kubevirt.io/vm-console-proxy/api/v1"
+	"kubevirt.io/vm-console-proxy/pkg/console/authConfig"
+	fakeAuth "kubevirt.io/vm-console-proxy/pkg/console/authConfig/fake"
 )
 
 var _ = Describe("Service", func() {

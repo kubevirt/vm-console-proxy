@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/kubevirt/vm-console-proxy/pkg/console"
+	"kubevirt.io/vm-console-proxy/pkg/console"
 )
 
 func main() {

@@ -23,7 +23,7 @@ import (
 	"k8s.io/utils/pointer"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
 
-	api "github.com/kubevirt/vm-console-proxy/api/v1"
+	api "kubevirt.io/vm-console-proxy/api/v1"
 )
 
 var _ = Describe("Kubevirt proxy", func() {

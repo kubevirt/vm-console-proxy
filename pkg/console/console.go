@@ -6,15 +6,15 @@ import (
 	"net/http"
 
 	"github.com/emicklei/go-restful/v3"
-	api "github.com/kubevirt/vm-console-proxy/api/v1"
-	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
-	"github.com/kubevirt/vm-console-proxy/pkg/console/service"
-	"github.com/kubevirt/vm-console-proxy/pkg/console/tlsconfig"
-	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
+	api "kubevirt.io/vm-console-proxy/api/v1"
+	"kubevirt.io/vm-console-proxy/pkg/console/authConfig"
+	"kubevirt.io/vm-console-proxy/pkg/console/service"
+	"kubevirt.io/vm-console-proxy/pkg/console/tlsconfig"
+	"kubevirt.io/vm-console-proxy/pkg/filewatch"
 )
 
 const (

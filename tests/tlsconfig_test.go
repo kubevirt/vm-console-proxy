@@ -10,11 +10,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	api "github.com/kubevirt/vm-console-proxy/api/v1"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kubevirt/vm-console-proxy/pkg/console"
+	api "kubevirt.io/vm-console-proxy/api/v1"
+	"kubevirt.io/vm-console-proxy/pkg/console"
 )
 
 var _ = Describe("TLS config", func() {

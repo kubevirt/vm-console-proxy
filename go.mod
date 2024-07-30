@@ -1,4 +1,4 @@
-module github.com/kubevirt/vm-console-proxy
+module kubevirt.io/vm-console-proxy
 
 go 1.22.4
 
