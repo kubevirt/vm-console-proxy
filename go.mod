@@ -15,6 +15,7 @@ require (
 	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0
 	kubevirt.io/api v1.3.0
 	kubevirt.io/client-go v1.3.0
+	kubevirt.io/vm-console-proxy/api v0.0.0
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -75,5 +76,9 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
 
-// This is needed by kubevirt.io/client-go
-replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20240430033511-f0e62f92d13f
+replace (
+	// This is needed by kubevirt.io/client-go
+	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20240430033511-f0e62f92d13f
+
+	kubevirt.io/vm-console-proxy/api => ./api
+)
