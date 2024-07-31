@@ -3,7 +3,7 @@ package fake
 import (
 	"crypto/x509"
 
-	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
+	"kubevirt.io/vm-console-proxy/pkg/console/authConfig"
 )
 
 type FakeReader struct {

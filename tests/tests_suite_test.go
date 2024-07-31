@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/kubevirt/vm-console-proxy/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	core "k8s.io/api/core/v1"
@@ -24,7 +23,8 @@ import (
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
-	port_forwarder "github.com/kubevirt/vm-console-proxy/tests/port-forwarder"
+	api "kubevirt.io/vm-console-proxy/api/v1"
+	port_forwarder "kubevirt.io/vm-console-proxy/tests/port-forwarder"
 )
 
 const (

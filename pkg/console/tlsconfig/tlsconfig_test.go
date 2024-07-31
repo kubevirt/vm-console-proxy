@@ -16,9 +16,9 @@ import (
 	"k8s.io/client-go/util/cert"
 	"sigs.k8s.io/yaml"
 
-	"github.com/kubevirt/vm-console-proxy/api/v1"
-	fakeAuth "github.com/kubevirt/vm-console-proxy/pkg/console/authConfig/fake"
-	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
+	"kubevirt.io/vm-console-proxy/api/v1"
+	fakeAuth "kubevirt.io/vm-console-proxy/pkg/console/authConfig/fake"
+	"kubevirt.io/vm-console-proxy/pkg/filewatch"
 )
 
 var _ = Describe("TlsConfig", func() {

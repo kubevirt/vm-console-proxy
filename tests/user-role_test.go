@@ -13,7 +13,7 @@ import (
 	rbac "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	proxy "github.com/kubevirt/vm-console-proxy/api/v1"
+	proxy "kubevirt.io/vm-console-proxy/api/v1"
 )
 
 var _ = Describe("Role for token generation", func() {

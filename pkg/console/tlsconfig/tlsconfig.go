@@ -13,9 +13,9 @@ import (
 	"k8s.io/client-go/util/cert"
 	"kubevirt.io/client-go/log"
 
-	"github.com/kubevirt/vm-console-proxy/api/v1"
-	"github.com/kubevirt/vm-console-proxy/pkg/console/authConfig"
-	"github.com/kubevirt/vm-console-proxy/pkg/filewatch"
+	"kubevirt.io/vm-console-proxy/api/v1"
+	"kubevirt.io/vm-console-proxy/pkg/console/authConfig"
+	"kubevirt.io/vm-console-proxy/pkg/filewatch"
 )
 
 type Watch interface {
