@@ -163,14 +163,25 @@ func loadCipherSuitesAndMinVersion(configPath string) ([]uint16, uint16, error) 
 		return nil, 0, fmt.Errorf("could not load tls config: %w", err)
 	}
 
-	ciphers, err := getCipherSuites(tlsProfile.Ciphers)
-	if err != nil {
-		return nil, 0, fmt.Errorf("could not get cipher suite numbers: %w", err)
-	}
-
 	minVersion, err := getMinTlsVersion(tlsProfile.MinTLSVersion)
 	if err != nil {
 		return nil, 0, fmt.Errorf("could not get minimum TLS version: %w", err)
+	}
+
+	// If Ciphers is not specified in the config file (the value is nil),
+	// then we return nil. This is a special value and the TLS library will
+	// enable default cipher suites.
+	// It is different from empty slice, that the TLS library interprets as
+	// no cipher suites enabled.
+	//
+	// The TLS 1.3 cipher suites cannot be configured, and are always enabled.
+	if tlsProfile.Ciphers == nil {
+		return nil, minVersion, nil
+	}
+
+	ciphers, err := getCipherSuites(tlsProfile.Ciphers)
+	if err != nil {
+		return nil, 0, fmt.Errorf("could not get cipher suite numbers: %w", err)
 	}
 
 	return ciphers, minVersion, nil
@@ -193,11 +204,6 @@ func loadTlsProfile(profilePath string) (*v1.TlsProfile, error) {
 }
 
 func getCipherSuites(cipherNames []string) ([]uint16, error) {
-	if len(cipherNames) == 0 {
-		// nil value has means default cipher suites will be used
-		return nil, nil
-	}
-
 	result := make([]uint16, 0, len(cipherNames))
 
 outerLoop:

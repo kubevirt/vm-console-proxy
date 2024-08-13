@@ -12,7 +12,7 @@ type TokenResponse struct {
 
 // TlsProfile is the TLS configuration for the proxy.
 type TlsProfile struct {
-	Ciphers       []string           `json:"ciphers,omitempty"`
+	Ciphers       []string           `json:"ciphers"`
 	MinTLSVersion TLSProtocolVersion `json:"minTLSVersion,omitempty"`
 }
 

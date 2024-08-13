@@ -125,7 +125,7 @@ var _ = Describe("TlsConfig", func() {
 		Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
 	})
 
-	It("should use default ciphers, if ciphers are not sepcified", func() {
+	It("should use default ciphers, if ciphers are not specified", func() {
 		tlsConfig := &v1.TlsProfile{
 			MinTLSVersion: v1.VersionTLS12,
 		}
@@ -140,6 +140,25 @@ var _ = Describe("TlsConfig", func() {
 
 		// Testing for nil specifically, because nil means default configuration.
 		Expect(config.CipherSuites).To(BeNil())
+		Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
+	})
+
+	It("should use no ciphers if ciphers is an empty array", func() {
+		tlsConfig := &v1.TlsProfile{
+			Ciphers:       []string{},
+			MinTLSVersion: v1.VersionTLS12,
+		}
+		tlsConfigYaml, err := yaml.Marshal(tlsConfig)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(tlsConfigPath, tlsConfigYaml, 0666)).To(Succeed())
+
+		configWatch.Reload()
+
+		config, err := configWatch.GetConfig()
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(config.CipherSuites).ToNot(BeNil())
+		Expect(config.CipherSuites).To(BeEmpty())
 		Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
 	})
 
