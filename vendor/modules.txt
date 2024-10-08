@@ -186,7 +186,7 @@ github.com/spf13/pflag
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11
 github.com/x448/float16
-# golang.org/x/net v0.29.0
+# golang.org/x/net v0.30.0
 ## explicit; go 1.18
 golang.org/x/net/context
 golang.org/x/net/html
@@ -203,15 +203,15 @@ golang.org/x/net/websocket
 ## explicit; go 1.18
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
-# golang.org/x/sys v0.25.0
+# golang.org/x/sys v0.26.0
 ## explicit; go 1.18
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/term v0.24.0
+# golang.org/x/term v0.25.0
 ## explicit; go 1.18
 golang.org/x/term
-# golang.org/x/text v0.18.0
+# golang.org/x/text v0.19.0
 ## explicit; go 1.18
 golang.org/x/text/encoding
 golang.org/x/text/encoding/charmap
@@ -233,15 +233,15 @@ golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
-# golang.org/x/time v0.6.0
+# golang.org/x/time v0.7.0
 ## explicit; go 1.18
 golang.org/x/time/rate
-# golang.org/x/tools v0.25.0
+# golang.org/x/tools v0.26.0
 ## explicit; go 1.22.0
 golang.org/x/tools/cover
 golang.org/x/tools/go/ast/inspector
-# google.golang.org/protobuf v1.34.2
-## explicit; go 1.20
+# google.golang.org/protobuf v1.35.1
+## explicit; go 1.21
 google.golang.org/protobuf/encoding/prototext
 google.golang.org/protobuf/encoding/protowire
 google.golang.org/protobuf/internal/descfmt
