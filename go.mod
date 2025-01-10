@@ -5,7 +5,7 @@ go 1.22.4
 require (
 	github.com/emicklei/go-restful/v3 v3.12.1
 	github.com/fsnotify/fsnotify v1.7.0
-	github.com/golang-jwt/jwt/v4 v4.5.0
+	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/golang/mock v1.6.0
 	github.com/onsi/ginkgo/v2 v2.19.0
 	github.com/onsi/gomega v1.33.1
