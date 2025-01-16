@@ -5,17 +5,17 @@ go 1.22.4
 require (
 	github.com/emicklei/go-restful/v3 v3.12.1
 	github.com/fsnotify/fsnotify v1.8.0
-	github.com/golang-jwt/jwt/v4 v4.5.1
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/golang/mock v1.6.0
-	github.com/onsi/ginkgo/v2 v2.21.0
-	github.com/onsi/gomega v1.35.1
-	k8s.io/api v0.30.3
-	k8s.io/apimachinery v0.31.2
-	k8s.io/client-go v0.30.3
-	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
-	kubevirt.io/api v1.3.1
-	kubevirt.io/client-go v1.3.1
-	kubevirt.io/vm-console-proxy/api v0.0.0
+	github.com/onsi/ginkgo/v2 v2.22.2
+	github.com/onsi/gomega v1.36.2
+	k8s.io/api v0.32.1
+	k8s.io/apimachinery v0.32.1
+	k8s.io/client-go v0.32.1
+	k8s.io/utils 24370beab758
+	kubevirt.io/api v1.4.0
+	kubevirt.io/client-go v1.4.0
+	kubevirt.io/vm-console-proxy/api v0.7.0
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -80,7 +80,7 @@ require (
 
 replace (
 	// This is needed by kubevirt.io/client-go
-	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20240430033511-f0e62f92d13f
+	k8s.io/kube-openapi => k8s.io/kube-openapi 2c72e554b1e7
 
 	kubevirt.io/vm-console-proxy/api => ./api
 )

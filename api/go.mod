@@ -2,7 +2,7 @@ module kubevirt.io/vm-console-proxy/api
 
 go 1.22.4
 
-require k8s.io/apimachinery v0.30.3
+require k8s.io/apimachinery v0.32.1
 
 require (
 	github.com/go-logr/logr v1.4.1 // indirect
