@@ -1,6 +1,6 @@
 module kubevirt.io/vm-console-proxy/api
 
-go 1.22.4
+go 1.23.2
 
 require k8s.io/apimachinery v0.30.3
 

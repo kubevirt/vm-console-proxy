@@ -23,7 +23,7 @@
        "release-note-none"
     ],
     "constraints": {
-      "go": "1.22",
+      "go": "1.23",
       "matchBaseBranches":[
          "main"
       ]
