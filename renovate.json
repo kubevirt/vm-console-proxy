@@ -32,6 +32,7 @@
        {
           "groupName":"all dependencies",
           "groupSlug":"all",
+          "enabled": false,
           "matchBaseBranches":[
              "main"
           ],
