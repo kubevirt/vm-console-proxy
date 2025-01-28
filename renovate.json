@@ -1,108 +1,23 @@
 {
+   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
    "extends": [
       ":gitSignOff",
       ":dependencyDashboard"
    ],
-   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-   "baseBranches": [
-      "main",
-      "stable",
-      "release-v0.6",
-      "release-v0.5",
-      "release-v0.4",
-      "release-v0.3",
-      "release-v0.1"
-   ],
+   "baseBranches": ["main", "/release-v([0-9]+\\.([0-9]+))/"],
    "prConcurrentLimit": 3,
-   "groupName": "all dependencies",
-   "groupSlug": "all",
    "lockFileMaintenance": {
       "enabled": false
    },
-   "labels": [
-      "release-note-none"
-   ],
-   "constraints": {
-      "go": "1.23",
-      "matchBaseBranches": [
-         "main"
-      ]
-   },
+   "postUpdateOptions": ["gomodTidy"],
+   "labels": ["release-note-none"],
    "packageRules": [
       {
          "groupName": "all dependencies",
          "groupSlug": "all",
          "enabled": false,
-         "matchBaseBranches": [
-            "main"
-         ],
-         "matchPackageNames": [
-            "*"
-         ]
-      },
-      {
-         "enabled": false,
-         "matchBaseBranches": [
-            "release-v0.6",
-            "release-v0.5",
-            "release-v0.4",
-            "release-v0.3",
-            "release-v0.1",
-            "stable"
-         ],
-         "matchPackageNames": [
-            "*"
-         ]
-      },
-      {
-         "matchPackageNames": [
-            "golang",
-            "go"
-         ],
-         "allowedVersions": "<=1.22",
-         "matchBaseBranches": [
-            "stable"
-         ]
-      },
-      {
-         "matchPackageNames": [
-            "golang",
-            "go"
-         ],
-         "allowedVersions": "<=1.22",
-         "matchBaseBranches": [
-            "release-v0.6"
-         ]
-      },
-      {
-         "matchPackageNames": [
-            "golang",
-            "go"
-         ],
-         "allowedVersions": "<=1.21",
-         "matchBaseBranches": [
-            "release-v0.5"
-         ]
-      },
-      {
-         "matchPackageNames": [
-            "golang",
-            "go"
-         ],
-         "allowedVersions": "<=1.20",
-         "matchBaseBranches": [
-            "release-v0.4",
-            "release-v0.3"
-         ]
-      },
-      {
-         "matchPackageNames": [
-            "golang",
-            "go"
-         ],
-         "allowedVersions": "<=1.19",
-         "matchBaseBranches": [
-            "release-v0.1"
+         "matchPackagePatterns": [
+         "*"
          ]
       }
    ],
@@ -111,5 +26,5 @@
    },
    "osvVulnerabilityAlerts": true,
    "assigneesFromCodeOwners": true,
-   "separateMajorMinor": false
+   "separateMajorMinor": true
 }
