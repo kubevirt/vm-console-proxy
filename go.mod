@@ -13,7 +13,7 @@ require (
 	github.com/onsi/gomega v1.24.2
 	github.com/openshift/api v0.0.0-20220504105152-6f735e7109c8
 	github.com/openshift/library-go v0.0.0-20220523142556-5bcfed822fc6
-	golang.org/x/net v0.17.0
+	golang.org/x/net v0.33.0
 	k8s.io/api v0.23.5
 	k8s.io/apimachinery v0.23.5
 	k8s.io/client-go v12.0.0+incompatible
