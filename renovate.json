@@ -4,7 +4,7 @@
       ":gitSignOff",
       ":dependencyDashboard"
    ],
-   "baseBranches": ["main", "/release-v([0-9]+\\.([0-9]+))/"],
+   "baseBranches": ["main", "/^release-v([0-9]+\\.([0-9]+))$/"],
    "prConcurrentLimit": 3,
    "lockFileMaintenance": {
       "enabled": false
