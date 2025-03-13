@@ -1,6 +1,8 @@
 module github.com/kubevirt/vm-console-proxy
 
-go 1.19
+go 1.23.0
+
+toolchain go1.23.7
 
 require (
 	github.com/emicklei/go-restful/v3 v3.10.1
@@ -13,7 +15,7 @@ require (
 	github.com/onsi/gomega v1.24.2
 	github.com/openshift/api v0.0.0-20220504105152-6f735e7109c8
 	github.com/openshift/library-go v0.0.0-20220523142556-5bcfed822fc6
-	golang.org/x/net v0.33.0
+	golang.org/x/net v0.36.0
 	k8s.io/api v0.23.5
 	k8s.io/apimachinery v0.23.5
 	k8s.io/client-go v12.0.0+incompatible
@@ -50,9 +52,9 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/term v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/term v0.29.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
