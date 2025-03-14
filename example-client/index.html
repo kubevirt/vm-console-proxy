@@ -130,6 +130,13 @@
             return defaultValue;
         }
 
+        function base64urlEncode(str) {
+            return btoa(str)
+                .replace(/=+$/, '')  // Remove any trailing '='s
+                .replace(/\+/g, '-')  // Replace '+' with '-'
+                .replace(/\//g, '_'); // Replace '/' with '_'
+        }
+
         document.getElementById('sendCtrlAltDelButton')
             .onclick = sendCtrlAltDel;
 
@@ -161,7 +168,7 @@
             {
                 wsProtocols: [
                     // The token needs to be base64 encoded
-                    "base64url.bearer.authorization.k8s.io." + btoa(vncToken),
+                    "base64url.bearer.authorization.k8s.io." + base64urlEncode(vncToken),
                     "base64.binary.k8s.io"
                 ]
             }
