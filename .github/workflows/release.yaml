@@ -1,8 +1,14 @@
 name: Release
 
-on:
-  release:
-    types: [published]
+# Disabling this workflow, because these actions are not allowed:
+#  bruceadams/get-release, peter-evans/repository-dispatch
+# TODO: fix this workflow
+
+#on:
+#  release:
+#    types: [published]
+
+on: {}
 
 jobs:
   build:
