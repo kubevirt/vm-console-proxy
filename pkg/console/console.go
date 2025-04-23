@@ -7,6 +7,10 @@ import (
 
 	"github.com/emicklei/go-restful/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/kube-openapi/pkg/builder"
+	"k8s.io/kube-openapi/pkg/common"
+	"k8s.io/kube-openapi/pkg/common/restfuladapter"
+	"k8s.io/kube-openapi/pkg/validation/spec"
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 
@@ -15,6 +19,7 @@ import (
 	"kubevirt.io/vm-console-proxy/pkg/console/service"
 	"kubevirt.io/vm-console-proxy/pkg/console/tlsconfig"
 	"kubevirt.io/vm-console-proxy/pkg/filewatch"
+	generated "kubevirt.io/vm-console-proxy/pkg/generated/api/v1"
 )
 
 const (
@@ -64,7 +69,12 @@ func Run() error {
 
 	handlers := service.NewService(cli, authConfigReader)
 
-	restful.Add(webService(handlers))
+	ws, err := webService(handlers)
+	if err != nil {
+		return fmt.Errorf("failed to create web service: %w", err)
+	}
+
+	restful.Add(ws)
 	restful.Filter(restful.OPTIONSFilter())
 
 	server := &http.Server{
@@ -85,13 +95,16 @@ func Run() error {
 	return server.ListenAndServeTLS("", "")
 }
 
-func webService(handlers service.Service) *restful.WebService {
+func webService(handlers service.Service) (*restful.WebService, error) {
 	ws := new(restful.WebService)
 
-	ws.Route(ws.GET("/apis/" + api.Group + "/" + api.Version + "/namespaces/{namespace:[a-z0-9][a-z0-9\\-]*}/virtualmachines/{name:[a-z0-9][a-z0-9\\-]*}/vnc").
+	ws.Route(ws.GET("/apis/"+api.Group+"/"+api.Version+"/namespaces/{namespace}/virtualmachines/{name}/vnc").
 		To(handlers.TokenHandler).
 		Doc("generate token").
 		Operation("token").
+		Returns(http.StatusOK, "OK", api.TokenResponse{}).
+		Returns(http.StatusBadRequest, "BadRequest", "").
+		Returns(http.StatusNotFound, "NotFound", "").
 		Param(ws.PathParameter("namespace", "namespace").Required(true)).
 		Param(ws.PathParameter("name", "name").Required(true)).
 		Param(ws.QueryParameter("duration", "duration")))
@@ -169,8 +182,7 @@ func webService(handlers service.Service) *restful.WebService {
 			response.WriteAsJson(&metav1.RootPaths{
 				Paths: []string{
 					"/apis",
-					"/apis/" + api.Group,
-					"/apis/" + api.Group + "/" + api.Version,
+					"/openapi/v2",
 				},
 			})
 		}).
@@ -178,5 +190,55 @@ func webService(handlers service.Service) *restful.WebService {
 		Doc("Get API root paths").
 		Returns(http.StatusOK, "OK", metav1.RootPaths{}))
 
-	return ws
+	openApiSpec, err := builder.BuildOpenAPISpecFromRoutes(restfuladapter.AdaptWebServices([]*restful.WebService{ws}), openApiConfig())
+	if err != nil {
+		return nil, fmt.Errorf("failed to build OpenAPI spec from routes: %w", err)
+	}
+
+	ws.Route(ws.GET("openapi/v2").
+		Consumes(restful.MIME_JSON).
+		Produces(restful.MIME_JSON).
+		To(func(request *restful.Request, response *restful.Response) {
+			response.WriteAsJson(openApiSpec)
+		}))
+
+	return ws, nil
+}
+
+func openApiConfig() *common.Config {
+	return &common.Config{
+		CommonResponses: map[int]spec.Response{
+			401: {
+				ResponseProps: spec.ResponseProps{
+					Description: "Unauthorized",
+				},
+			},
+		},
+		Info: &spec.Info{
+			InfoProps: spec.InfoProps{
+				Title:       "KubeVirt VNC token generation API",
+				Description: "This is the VNC token generation API for Kubevirt.",
+				Contact: &spec.ContactInfo{
+					Name:  "kubevirt-dev",
+					Email: "kubevirt-dev@googlegroups.com",
+					URL:   "https://github.com/kubevirt/kubevirt",
+				},
+				License: &spec.License{
+					Name: "Apache 2.0",
+					URL:  "https://www.apache.org/licenses/LICENSE-2.0",
+				},
+			},
+		},
+		SecurityDefinitions: &spec.SecurityDefinitions{
+			"BearerToken": &spec.SecurityScheme{
+				SecuritySchemeProps: spec.SecuritySchemeProps{
+					Type:        "apiKey",
+					Name:        "authorization",
+					In:          "header",
+					Description: "Bearer Token authentication",
+				},
+			},
+		},
+		GetDefinitions: generated.GetOpenAPIDefinitions,
+	}
 }
