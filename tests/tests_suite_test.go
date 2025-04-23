@@ -163,6 +163,31 @@ var _ = BeforeSuite(func() {
 			Expect(err).ToNot(HaveOccurred())
 		}
 	})
+
+	// Binding the service account to system:discovery ClusterRole, so it can access /openapi/v2 endpoint
+	clusterRoleBinding := &rbac.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: roleName + "-cluster-role",
+		},
+		Subjects: []rbac.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      serviceAccount.Name,
+			Namespace: serviceAccount.Namespace,
+		}},
+		RoleRef: rbac.RoleRef{
+			APIGroup: rbac.GroupName,
+			Kind:     "ClusterRole",
+			Name:     "system:discovery",
+		},
+	}
+	_, err = ApiClient.RbacV1().ClusterRoleBindings().Create(context.TODO(), clusterRoleBinding, metav1.CreateOptions{})
+	Expect(err).ToNot(HaveOccurred())
+	DeferCleanup(func() {
+		err := ApiClient.RbacV1().ClusterRoleBindings().Delete(context.TODO(), clusterRoleBinding.Name, metav1.DeleteOptions{})
+		if err != nil && !errors.IsNotFound(err) {
+			Expect(err).ToNot(HaveOccurred())
+		}
+	})
 })
 
 var _ = AfterSuite(func() {
@@ -216,6 +241,10 @@ func UpdateConfigMap(updateFunc func(configMap *core.ConfigMap)) {
 
 func GetApiUrlBase() string {
 	return apiServerHostname + "/apis/" + api.Group + "/" + api.Version + "/"
+}
+
+func GetOpenApiEndpoint() string {
+	return apiServerHostname + "/openapi/v2"
 }
 
 func GetApiConnection() (net.Conn, error) {
