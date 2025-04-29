@@ -16,6 +16,9 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 KUSTOMIZE_VERSION ?= v4.5.7
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 
+OPENAPI_GEN ?= $(LOCALBIN)/openapi-gen
+OPENAPI_VERSION ?= c8a335a
+
 KUBECONFIG ?= ~/.kube/config
 
 .PHONY:build
@@ -23,7 +26,7 @@ build: fmt vet
 	go build -o bin/console main.go
 
 .PHONY: build-container
-build-container: fmt vet test
+build-container: generate fmt vet test
 	podman build -t ${IMG} .
 
 .PHONY: push-container
@@ -38,6 +41,21 @@ manifests:
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
 	test -s $(LOCALBIN)/kustomize || curl -s $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN)
+
+.PHONY: openapi-gen
+openapi-gen: $(OPENAPI_GEN) ## Download openapi-gen locally if necessary.
+$(OPENAPI_GEN): $(LOCALBIN)
+	test -s $(OPENAPI_GEN) || GOBIN=$(LOCALBIN) go install k8s.io/kube-openapi/cmd/openapi-gen@$(OPENAPI_VERSION)
+
+.PHONY: generate
+generate: openapi-gen
+	cd api && $(OPENAPI_GEN) \
+	  --output-file zz_generated.openapi.go \
+	  --output-dir ../pkg/generated/api/v1alpha1 \
+	  --output-pkg github.com/kubevirt/vm-console-proxy/api/v1alpha1 \
+	  --report-filename /dev/null \
+	  k8s.io/apimachinery/pkg/apis/meta/v1 \
+	  github.com/kubevirt/vm-console-proxy/api/v1alpha1
 
 .PHONY: release-manifests
 release-manifests: kustomize manifests
