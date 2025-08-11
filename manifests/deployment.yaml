@@ -28,6 +28,10 @@ spec:
           args: []
           image: console:latest
           name: console
+          resources:
+            requests:
+              memory: "65Mi"
+              cpu: "100m"
           ports:
             - name: api
               protocol: TCP
