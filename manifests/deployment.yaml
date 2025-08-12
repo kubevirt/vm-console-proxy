@@ -28,6 +28,11 @@ spec:
           args: []
           image: console:latest
           name: console
+          terminationMessagePolicy: FallbackToLogsOnError
+          resources:
+            requests:
+              memory: "65Mi"
+              cpu: "100m"
           ports:
             - name: api
               protocol: TCP
