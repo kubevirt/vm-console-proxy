@@ -35,6 +35,9 @@ const (
 )
 
 func Run() error {
+	log.InitializeLogging("vm-console-proxy")
+	log.Log.Info("Starting VM Console Proxy")
+
 	cli, err := kubecli.GetKubevirtClient()
 	if err != nil {
 		return err
