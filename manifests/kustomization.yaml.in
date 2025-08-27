@@ -18,3 +18,19 @@ images:
   - name: console
     newName: ${IMG_REPOSITORY}
     newTag: ${IMG_TAG}
+
+patches:
+  - target:
+      kind: Deployment
+      name: vm-console-proxy
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: vm-console-proxy
+      spec:
+        template:
+          spec:
+            containers:
+              - name: console
+                imagePullPolicy: ${IMG_PULL_POLICY}
