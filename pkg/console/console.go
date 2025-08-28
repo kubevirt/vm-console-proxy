@@ -1,11 +1,17 @@
 package console
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/emicklei/go-restful/v3"
+	"golang.org/x/sync/errgroup"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kube-openapi/pkg/builder"
 	"k8s.io/kube-openapi/pkg/common"
@@ -35,6 +41,9 @@ const (
 )
 
 func Run() error {
+	log.InitializeLogging("vm-console-proxy")
+	log.Log.Info("Starting VM Console Proxy")
+
 	cli, err := kubecli.GetKubevirtClient()
 	if err != nil {
 		return err
@@ -58,14 +67,6 @@ func Run() error {
 	if err := tlsConfigWatch.AddToFilewatch(watch); err != nil {
 		return err
 	}
-
-	watchDone := make(chan struct{})
-	defer close(watchDone)
-	go func() {
-		if err := watch.Run(watchDone); err != nil {
-			log.Log.Errorf("Error running file watch: %s", err)
-		}
-	}()
 
 	handlers := service.NewService(cli, authConfigReader)
 
@@ -92,7 +93,47 @@ func Run() error {
 		},
 	}
 
-	return server.ListenAndServeTLS("", "")
+	sigCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+	group, groupCtx := errgroup.WithContext(sigCtx)
+
+	group.Go(startWatch(groupCtx, watch))
+	group.Go(startServer(server))
+	group.Go(stopServer(groupCtx, server))
+
+	return group.Wait()
+}
+
+func startWatch(ctx context.Context, watch filewatch.Watch) func() error {
+	log.Log.Info("Starting watch")
+	return func() error {
+		if err := watch.Run(ctx.Done()); err != nil {
+			log.Log.Errorf("Error running file watch: %s", err)
+			return err
+		}
+		return nil
+	}
+}
+
+func startServer(server *http.Server) func() error {
+	log.Log.Info("Starting http server")
+	return func() error {
+		if err := server.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
+			log.Log.Errorf("Error running http server: %s", err)
+			return err
+		}
+		return nil
+	}
+}
+
+func stopServer(ctx context.Context, server *http.Server) func() error {
+	return func() error {
+		<-ctx.Done()
+		log.Log.Infof("Shutting down the http server")
+		shutDownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return server.Shutdown(shutDownCtx)
+	}
 }
 
 func webService(handlers service.Service) (*restful.WebService, error) {
