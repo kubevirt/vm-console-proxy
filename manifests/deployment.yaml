@@ -34,7 +34,7 @@ spec:
               memory: "65Mi"
               cpu: "100m"
           ports:
-            - name: api
+            - name: http-api
               protocol: TCP
               containerPort: 8768
           securityContext:
