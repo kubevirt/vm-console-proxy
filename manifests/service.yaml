@@ -7,6 +7,6 @@ metadata:
 spec:
   ports:
     - port: 443
-      targetPort: api
+      targetPort: http-api
   selector:
     vm-console-proxy.kubevirt.io: vm-console-proxy
