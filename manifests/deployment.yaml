@@ -24,7 +24,7 @@ spec:
       containers:
         - command:
             - /console
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           args: []
           image: console:latest
           name: console

@@ -4,6 +4,8 @@ IMG_REPOSITORY ?= quay.io/kubevirt/vm-console-proxy
 IMG_TAG ?= latest
 IMG ?= ${IMG_REPOSITORY}:${IMG_TAG}
 
+IMG_PULL_POLICY ?= IfNotPresent
+
 SRC_PATHS_TESTS = ./pkg/...
 PROJECT_NAME = vm-console-proxy
 MANIFETS_PATH = ./manifests
@@ -38,7 +40,9 @@ push-container:
 
 .PHONY: manifests
 manifests:
-	cd manifests && IMG_REPOSITORY=${IMG_REPOSITORY} IMG_TAG=${IMG_TAG} envsubst < kustomization.yaml.in > kustomization.yaml
+	cd manifests && \
+		IMG_REPOSITORY=${IMG_REPOSITORY} IMG_TAG=${IMG_TAG} IMG_PULL_POLICY=${IMG_PULL_POLICY}\
+		envsubst < kustomization.yaml.in > kustomization.yaml
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -66,6 +70,7 @@ release-manifests: kustomize manifests
 	$(KUSTOMIZE) build ${MANIFETS_PATH} > ./_out/${PROJECT_NAME}.yaml
 
 .PHONY: deploy
+deploy: IMG_PULL_POLICY := Always
 deploy: manifests
 	oc apply -k manifests
 
