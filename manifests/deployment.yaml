@@ -42,6 +42,20 @@ spec:
             capabilities:
               drop:
                 - "ALL"
+          livenessProbe:
+            httpGet:
+              path: /readyz
+              port: 8769
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8769
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 2
           volumeMounts:
             - name: "config"
               mountPath: "/config"

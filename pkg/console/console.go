@@ -31,6 +31,7 @@ import (
 const (
 	defaultAddress = "0.0.0.0"
 	defaultPort    = 8768
+	probePort      = 8769
 
 	serviceCertDir = "/tmp/vm-console-proxy-cert"
 	certName       = "tls.crt"
@@ -93,12 +94,22 @@ func Run() error {
 		},
 	}
 
+	probeMux := http.NewServeMux()
+	probeMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {})
+
+	probeServer := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", defaultAddress, probePort),
+		Handler: probeMux,
+	}
+
 	sigCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 	group, groupCtx := errgroup.WithContext(sigCtx)
 
 	group.Go(startWatch(groupCtx, watch))
-	group.Go(startServer(server))
+	group.Go(startServerTLS(server))
+	group.Go(startServer(probeServer))
+	group.Go(stopServer(groupCtx, probeServer))
 	group.Go(stopServer(groupCtx, server))
 
 	return group.Wait()
@@ -118,8 +129,19 @@ func startWatch(ctx context.Context, watch filewatch.Watch) func() error {
 func startServer(server *http.Server) func() error {
 	log.Log.Info("Starting http server")
 	return func() error {
-		if err := server.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			log.Log.Errorf("Error running http server: %s", err)
+			return err
+		}
+		return nil
+	}
+}
+
+func startServerTLS(server *http.Server) func() error {
+	log.Log.Info("Starting https server")
+	return func() error {
+		if err := server.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
+			log.Log.Errorf("Error running https server: %s", err)
 			return err
 		}
 		return nil
