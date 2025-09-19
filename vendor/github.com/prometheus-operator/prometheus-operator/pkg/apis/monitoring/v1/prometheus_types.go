@@ -15,6 +15,7 @@
 package v1
 
 import (
+	"fmt"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -265,7 +266,9 @@ type CommonPrometheusFields struct {
 	// `__tmp_hash` label during the target discovery with relabeling
 	// configuration (either in the monitoring resources or via scrape class).
 	//
-	// +optional
+	// You can also disable sharding on a specific target by setting the
+	// `__tmp_disable_sharding` label with relabeling configuration. When
+	// the label value isn't empty, all Prometheus shards will scrape the target.
 	Shards *int32 `json:"shards,omitempty"`
 
 	// Name of Prometheus external label used to denote the replica name.
@@ -691,18 +694,46 @@ type CommonPrometheusFields struct {
 	EnforcedBodySizeLimit ByteSize `json:"enforcedBodySizeLimit,omitempty"`
 
 	// Specifies the validation scheme for metric and label names.
+	//
+	// It requires Prometheus >= v2.55.0.
+	//
 	// +optional
 	NameValidationScheme *NameValidationSchemeOptions `json:"nameValidationScheme,omitempty"`
 
-	// Minimum number of seconds for which a newly created Pod should be ready
-	// without any of its container crashing for it to be considered available.
-	// Defaults to 0 (pod will be considered available as soon as it is ready)
+	// Specifies the character escaping scheme that will be requested when scraping
+	// for metric and label names that do not conform to the legacy Prometheus
+	// character set.
 	//
-	// This is an alpha field from kubernetes 1.22 until 1.24 which requires
-	// enabling the StatefulSetMinReadySeconds feature gate.
+	// It requires Prometheus >= v3.4.0.
 	//
 	// +optional
-	MinReadySeconds *uint32 `json:"minReadySeconds,omitempty"`
+	NameEscapingScheme *NameEscapingSchemeOptions `json:"nameEscapingScheme,omitempty"`
+
+	// Whether to convert all scraped classic histograms into a native
+	// histogram with custom buckets.
+	//
+	// It requires Prometheus >= v3.4.0.
+	//
+	// +optional
+	ConvertClassicHistogramsToNHCB *bool `json:"convertClassicHistogramsToNHCB,omitempty"`
+
+	// Whether to scrape a classic histogram that is also exposed as a native histogram.
+	//
+	// Notice: `scrapeClassicHistograms` corresponds to the `always_scrape_classic_histograms` field in the Prometheus configuration.
+	//
+	// It requires Prometheus >= v3.5.0.
+	//
+	// +optional
+	ScrapeClassicHistograms *bool `json:"scrapeClassicHistograms,omitempty"`
+
+	// Minimum number of seconds for which a newly created Pod should be ready
+	// without any of its container crashing for it to be considered available.
+	//
+	// If unset, pods will be considered available as soon as they are ready.
+	//
+	// +kubebuilder:validation:Minimum:=0
+	// +optional
+	MinReadySeconds *int32 `json:"minReadySeconds,omitempty"`
 
 	// Optional list of hosts and IPs that will be injected into the Pod's
 	// hosts file if specified.
@@ -746,7 +777,7 @@ type CommonPrometheusFields struct {
 	// Use the host's network namespace if true.
 	//
 	// Make sure to understand the security implications if you want to enable
-	// it (https://kubernetes.io/docs/concepts/configuration/overview/).
+	// it (https://kubernetes.io/docs/concepts/configuration/overview/ ).
 	//
 	// When hostNetwork is enabled, this will set the DNS policy to
 	// `ClusterFirstWithHostNet` automatically (unless `.spec.DNSPolicy` is set
@@ -887,20 +918,68 @@ type CommonPrometheusFields struct {
 	// RuntimeConfig configures the values for the Prometheus process behavior
 	// +optional
 	Runtime *RuntimeConfig `json:"runtime,omitempty"`
+
+	// Optional duration in seconds the pod needs to terminate gracefully.
+	// Value must be non-negative integer. The value zero indicates stop immediately via
+	// the kill signal (no opportunity to shut down) which may lead to data corruption.
+	//
+	// Defaults to 600 seconds.
+	//
+	// +kubebuilder:validation:Minimum:=0
+	// +optional
+	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
+
+	// HostUsers supports the user space in Kubernetes.
+	//
+	// More info: https://kubernetes.io/docs/tasks/configure-pod-container/user-namespaces/
+	//
+	//
+	// The feature requires at least Kubernetes 1.28 with the `UserNamespacesSupport` feature gate enabled.
+	// Starting Kubernetes 1.33, the feature is enabled by default.
+	//
+	// +optional
+	HostUsers *bool `json:"hostUsers,omitempty"`
 }
 
 // Specifies the validation scheme for metric and label names.
-// Supported values are:
-// * `UTF8NameValidationScheme` for UTF-8 support.
-// * `LegacyNameValidationScheme` for letters, numbers, colons, and underscores.
 //
-// Note that `LegacyNameValidationScheme` cannot be used along with the OpenTelemetry `NoUTF8EscapingWithSuffixes` translation strategy (if enabled).
+// Supported values are:
+//   - `UTF8NameValidationScheme` for UTF-8 support.
+//   - `LegacyNameValidationScheme` for letters, numbers, colons, and underscores.
+//
+// Note that `LegacyNameValidationScheme` cannot be used along with the
+// OpenTelemetry `NoUTF8EscapingWithSuffixes` translation strategy (if
+// enabled).
+//
 // +kubebuilder:validation:Enum=UTF8;Legacy
 type NameValidationSchemeOptions string
 
 const (
 	UTF8NameValidationScheme   NameValidationSchemeOptions = "UTF8"
 	LegacyNameValidationScheme NameValidationSchemeOptions = "Legacy"
+)
+
+// Specifies the character escaping scheme that will be applied when scraping
+// for metric and label names that do not conform to the legacy Prometheus
+// character set.
+//
+// Supported values are:
+//
+//   - `AllowUTF8`, full UTF-8 support, no escaping needed.
+//   - `Underscores`, legacy-invalid characters are escaped to underscores.
+//   - `Dots`, dot characters are escaped to `_dot_`, underscores to `__`, and
+//     all other legacy-invalid characters to underscores.
+//   - `Values`, the string is prefixed by `U__` and all invalid characters are
+//     escaped to their unicode value, surrounded by underscores.
+//
+// +kubebuilder:validation:Enum=AllowUTF8;Underscores;Dots;Values
+type NameEscapingSchemeOptions string
+
+const (
+	AllowUTF8NameEscapingScheme   NameEscapingSchemeOptions = "AllowUTF8"
+	UnderscoresNameEscapingScheme NameEscapingSchemeOptions = "Underscores"
+	DotsNameEscapingScheme        NameEscapingSchemeOptions = "Dots"
+	ValuesNameEscapingScheme      NameEscapingSchemeOptions = "Values"
 )
 
 // +kubebuilder:validation:Enum=HTTP;ProcessSignal
@@ -1149,6 +1228,11 @@ var (
 	DeleteWhenScaledRetentionType WhenScaledRetentionType = "Delete"
 )
 
+type RetainConfig struct {
+	// +required
+	RetentionPeriod Duration `json:"retentionPeriod"`
+}
+
 type ShardRetentionPolicy struct {
 	// Defines the retention policy when the Prometheus shards are scaled down.
 	// * `Delete`, the operator will delete the pods from the scaled-down shard(s).
@@ -1158,6 +1242,10 @@ type ShardRetentionPolicy struct {
 	// +kubebuilder:validation:Enum=Retain;Delete
 	// +optional
 	WhenScaled *WhenScaledRetentionType `json:"whenScaled,omitempty"`
+	// Defines the config for retention when the retention policy is set to `Retain`.
+	// This field is ineffective as of now.
+	// +optional
+	Retain *RetainConfig `json:"retain,omitempty"`
 }
 
 type PrometheusTracingConfig struct {
@@ -1461,7 +1549,7 @@ type RemoteWriteSpec struct {
 	// The name of the remote write queue, it must be unique if specified. The
 	// name is used in metrics and logging in order to differentiate queues.
 	//
-	// It requires Prometheus >= v2.15.0.
+	// It requires Prometheus >= v2.15.0 or Thanos >= 0.24.0.
 	//
 	//+optional
 	Name *string `json:"name,omitempty"`
@@ -1477,7 +1565,7 @@ type RemoteWriteSpec struct {
 	// Before setting this field, consult with your remote storage provider
 	// what message version it supports.
 	//
-	// It requires Prometheus >= v2.54.0.
+	// It requires Prometheus >= v2.54.0 or Thanos >= v0.37.0.
 	//
 	// +optional
 	MessageVersion *RemoteWriteMessageVersion `json:"messageVersion,omitempty"`
@@ -1486,7 +1574,7 @@ type RemoteWriteSpec struct {
 	// exemplar-storage itself must be enabled using the `spec.enableFeatures`
 	// option for exemplars to be scraped in the first place.
 	//
-	// It requires Prometheus >= v2.27.0.
+	// It requires Prometheus >= v2.27.0 or Thanos >= v0.24.0.
 	//
 	// +optional
 	SendExemplars *bool `json:"sendExemplars,omitempty"`
@@ -1494,7 +1582,7 @@ type RemoteWriteSpec struct {
 	// Enables sending of native histograms, also known as sparse histograms
 	// over remote write.
 	//
-	// It requires Prometheus >= v2.40.0.
+	// It requires Prometheus >= v2.40.0 or Thanos >= v0.30.0.
 	//
 	// +optional
 	SendNativeHistograms *bool `json:"sendNativeHistograms,omitempty"`
@@ -1506,7 +1594,7 @@ type RemoteWriteSpec struct {
 	// Custom HTTP headers to be sent along with each remote write request.
 	// Be aware that headers that are set by Prometheus itself can't be overwritten.
 	//
-	// It requires Prometheus >= v2.25.0.
+	// It requires Prometheus >= v2.25.0 or Thanos >= v0.24.0.
 	//
 	// +optional
 	Headers map[string]string `json:"headers,omitempty"`
@@ -1517,7 +1605,7 @@ type RemoteWriteSpec struct {
 
 	// OAuth2 configuration for the URL.
 	//
-	// It requires Prometheus >= v2.27.0.
+	// It requires Prometheus >= v2.27.0 or Thanos >= v0.24.0.
 	//
 	// Cannot be set at the same time as `sigv4`, `authorization`, `basicAuth`, or `azureAd`.
 	// +optional
@@ -1537,7 +1625,7 @@ type RemoteWriteSpec struct {
 
 	// Authorization section for the URL.
 	//
-	// It requires Prometheus >= v2.26.0.
+	// It requires Prometheus >= v2.26.0 or Thanos >= v0.24.0.
 	//
 	// Cannot be set at the same time as `sigv4`, `basicAuth`, `oauth2`, or `azureAd`.
 	//
@@ -1546,7 +1634,7 @@ type RemoteWriteSpec struct {
 
 	// Sigv4 allows to configures AWS's Signature Verification 4 for the URL.
 	//
-	// It requires Prometheus >= v2.26.0.
+	// It requires Prometheus >= v2.26.0 or Thanos >= v0.24.0.
 	//
 	// Cannot be set at the same time as `authorization`, `basicAuth`, `oauth2`, or `azureAd`.
 	//
@@ -1555,7 +1643,7 @@ type RemoteWriteSpec struct {
 
 	// AzureAD for the URL.
 	//
-	// It requires Prometheus >= v2.45.0.
+	// It requires Prometheus >= v2.45.0 or Thanos >= v0.31.0.
 	//
 	// Cannot be set at the same time as `authorization`, `basicAuth`, `oauth2`, or `sigv4`.
 	//
@@ -1578,7 +1666,7 @@ type RemoteWriteSpec struct {
 
 	// Configure whether HTTP requests follow HTTP 3xx redirects.
 	//
-	// It requires Prometheus >= v2.26.0.
+	// It requires Prometheus >= v2.26.0 or Thanos >= v0.24.0.
 	//
 	// +optional
 	FollowRedirects *bool `json:"followRedirects,omitempty"`
@@ -1606,7 +1694,7 @@ type RemoteWriteSpec struct {
 	// Note: The connection timeout applies to the entire resolution and connection process.
 	//       If disabled, the timeout is distributed across all connection attempts.
 	//
-	// It requires Prometheus >= v3.1.0.
+	// It requires Prometheus >= v3.1.0 or Thanos >= v0.38.0.
 	//
 	// +optional
 	RoundRobinDNS *bool `json:"roundRobinDNS,omitempty"`
@@ -1652,7 +1740,7 @@ type QueueConfig struct {
 	// in a breaking way.
 	RetryOnRateLimit bool `json:"retryOnRateLimit,omitempty"`
 	// SampleAgeLimit drops samples older than the limit.
-	// It requires Prometheus >= v2.50.0.
+	// It requires Prometheus >= v2.50.0 or Thanos >= v0.32.0.
 	//
 	// +optional
 	SampleAgeLimit *Duration `json:"sampleAgeLimit,omitempty"`
@@ -1692,7 +1780,7 @@ type AzureAD struct {
 	// OAuth defines the oauth config that is being used to authenticate.
 	// Cannot be set at the same time as `managedIdentity` or `sdk`.
 	//
-	// It requires Prometheus >= v2.48.0.
+	// It requires Prometheus >= v2.48.0 or Thanos >= v0.31.0.
 	//
 	// +optional
 	OAuth *AzureOAuth `json:"oauth,omitempty"`
@@ -1700,7 +1788,7 @@ type AzureAD struct {
 	// See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
 	// Cannot be set at the same time as `oauth` or `managedIdentity`.
 	//
-	// It requires Prometheus >= 2.52.0.
+	// It requires Prometheus >= v2.52.0 or Thanos >= v0.36.0.
 	// +optional
 	SDK *AzureSDK `json:"sdk,omitempty"`
 }
@@ -1924,6 +2012,10 @@ type APIServerConfig struct {
 	//
 	// Deprecated: this will be removed in a future release.
 	BearerToken string `json:"bearerToken,omitempty"`
+
+	// Optional ProxyConfig.
+	// +optional
+	ProxyConfig `json:",inline"`
 }
 
 // +kubebuilder:validation:Enum=v1;V1;v2;V2
@@ -2063,6 +2155,14 @@ type MetadataConfig struct {
 
 	// Defines how frequently metric metadata is sent to the remote storage.
 	SendInterval Duration `json:"sendInterval,omitempty"`
+
+	// MaxSamplesPerSend is the maximum number of metadata samples per send.
+	//
+	// It requires Prometheus >= v2.29.0.
+	//
+	// +optional
+	// +kubebuilder:validation:Minimum=-1
+	MaxSamplesPerSend *int32 `json:"maxSamplesPerSend,omitempty"`
 }
 
 type ShardStatus struct {
@@ -2249,19 +2349,40 @@ type ScrapeClass struct {
 // Supported values are:
 // * `NoUTF8EscapingWithSuffixes`
 // * `UnderscoreEscapingWithSuffixes`
-// +kubebuilder:validation:Enum=NoUTF8EscapingWithSuffixes;UnderscoreEscapingWithSuffixes
+// * `NoTranslation`
+// +kubebuilder:validation:Enum=NoUTF8EscapingWithSuffixes;UnderscoreEscapingWithSuffixes;NoTranslation
 type TranslationStrategyOption string
 
 const (
 	NoUTF8EscapingWithSuffixes     TranslationStrategyOption = "NoUTF8EscapingWithSuffixes"
 	UnderscoreEscapingWithSuffixes TranslationStrategyOption = "UnderscoreEscapingWithSuffixes"
+	// It requires Prometheus >= v3.4.0.
+	NoTranslation TranslationStrategyOption = "NoTranslation"
 )
 
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 //
 // +k8s:openapi-gen=true
 type OTLPConfig struct {
+	// Promote all resource attributes to metric labels except the ones defined in `ignoreResourceAttributes`.
+	//
+	// Cannot be true when `promoteResourceAttributes` is defined.
+	// It requires Prometheus >= v3.5.0.
+	// +optional
+	PromoteAllResourceAttributes *bool `json:"promoteAllResourceAttributes,omitempty"`
+
+	// List of OpenTelemetry resource attributes to ignore when `promoteAllResourceAttributes` is true.
+	//
+	// It requires `promoteAllResourceAttributes` to be true.
+	// It requires Prometheus >= v3.5.0.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	// +listType=set
+	// +optional
+	IgnoreResourceAttributes []string `json:"ignoreResourceAttributes,omitempty"`
+
 	// List of OpenTelemetry Attributes that should be promoted to metric labels, defaults to none.
+	// Cannot be defined when `promoteAllResourceAttributes` is true.
 	//
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:items:MinLength=1
@@ -2281,4 +2402,26 @@ type OTLPConfig struct {
 	// It requires Prometheus >= v3.1.0.
 	// +optional
 	KeepIdentifyingResourceAttributes *bool `json:"keepIdentifyingResourceAttributes,omitempty"`
+
+	// Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
+	// It requires Prometheus >= v3.4.0.
+	// +optional
+	ConvertHistogramsToNHCB *bool `json:"convertHistogramsToNHCB,omitempty"`
+}
+
+// Validate semantically validates the given OTLPConfig section.
+func (c *OTLPConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+
+	if len(c.PromoteResourceAttributes) > 0 && c.PromoteAllResourceAttributes != nil && *c.PromoteAllResourceAttributes {
+		return fmt.Errorf("'promoteAllResourceAttributes' cannot be set to 'true' simultaneously with 'promoteResourceAttributes'")
+	}
+
+	if len(c.IgnoreResourceAttributes) > 0 && (c.PromoteAllResourceAttributes == nil || !*c.PromoteAllResourceAttributes) {
+		return fmt.Errorf("'ignoreResourceAttributes' can only be set when 'promoteAllResourceAttributes' is true")
+	}
+
+	return nil
 }
