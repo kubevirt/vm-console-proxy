@@ -20,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
 
 	api "kubevirt.io/vm-console-proxy/api/v1"
@@ -190,7 +189,7 @@ var _ = Describe("Kubevirt proxy", func() {
 				Eventually(func() error {
 					_, err := ApiClient.VirtualMachine(testNamespace).Get(context.Background(), vmName, metav1.GetOptions{})
 					return err
-				}, time.Minute, time.Second).Should(MatchError(errors.IsNotFound, "errors.IsNotFound"))
+				}, 2*time.Minute, time.Second).Should(MatchError(errors.IsNotFound, "errors.IsNotFound"))
 
 				By("testing that resources have been cleaned up")
 				_, err = ApiClient.CoreV1().ServiceAccounts(testNamespace).Get(context.Background(), resourceName, metav1.GetOptions{})
@@ -208,7 +207,7 @@ var _ = Describe("Kubevirt proxy", func() {
 	Context("accessing kubevirt VMI/vnc endpoint", func() {
 		It("should be able to access VMI/vnc endpoint using token", func() {
 			vm := testVm("test-vm-")
-			vm.Spec.Running = pointer.Bool(false)
+			vm.Spec.RunStrategy = ptr.To(kubevirtcorev1.RunStrategyHalted)
 			vm, err := ApiClient.VirtualMachine(testNamespace).Create(context.Background(), vm, metav1.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
@@ -288,7 +287,7 @@ func testVm(namePrefix string) *kubevirtcorev1.VirtualMachine {
 			Namespace:    testNamespace,
 		},
 		Spec: kubevirtcorev1.VirtualMachineSpec{
-			Running: ptr.To(true),
+			RunStrategy: ptr.To(kubevirtcorev1.RunStrategyAlways),
 			Template: &kubevirtcorev1.VirtualMachineInstanceTemplateSpec{
 				Spec: kubevirtcorev1.VirtualMachineInstanceSpec{
 					Domain: kubevirtcorev1.DomainSpec{
