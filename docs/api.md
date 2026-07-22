@@ -11,7 +11,7 @@ and name of a running VMI.
 
 #### Parameters
 - `duration` - Duration while the token is valid. If it is not specified, then the token will expire after 10 minutes.
-  The minimum `duration` value is 10 minutes, and there isn't a maximum value.
+  vm-console-proxy does not enforce a minimum or maximum duration.
   Its format is described in the golang library documentation [here](https://pkg.go.dev/time@go1.19.13#ParseDuration):
 
 > A duration string is a possibly signed sequence of
@@ -20,9 +20,12 @@ and name of a running VMI.
 > Valid time units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`.
 
 #### Result
-Result is a JSON object containing the token:
+Result is a JSON object containing the token and its expiration time:
 ```json
-{ "token": "eyJhb..." }
+{
+  "token": "eyJhb...",
+  "expirationTimestamp": "2026-06-26T12:34:56Z"
+}
 ```
 
 ### Example
