@@ -78,11 +78,21 @@ type VirtualMachineSnapshotSpec struct {
 type Indication string
 
 const (
-	VMSnapshotOnlineSnapshotIndication Indication = "Online"
-	VMSnapshotNoGuestAgentIndication   Indication = "NoGuestAgent"
-	VMSnapshotGuestAgentIndication     Indication = "GuestAgent"
-	VMSnapshotQuiesceFailedIndication  Indication = "QuiesceFailed"
+	VMSnapshotOnlineSnapshotIndication  Indication = "Online"
+	VMSnapshotNoGuestAgentIndication    Indication = "NoGuestAgent"
+	VMSnapshotGuestAgentIndication      Indication = "GuestAgent"
+	VMSnapshotQuiesceTimeoutIndication  Indication = "QuiesceTimeout"
+	VMSnapshotPausedIndication          Indication = "Paused"
+	VMSnapshotPartialSnapshotIndication Indication = "PartialSnapshot"
 )
+
+// SourceIndication provides an indication of the source VM with its description message
+type SourceIndication struct {
+	// Indication is the indication type
+	Indication Indication `json:"indication"`
+	// Message provides a description message of the indication
+	Message string `json:"message"`
+}
 
 // VirtualMachineSnapshotPhase is the current phase of the VirtualMachineSnapshot
 type VirtualMachineSnapshotPhase string
@@ -121,9 +131,14 @@ type VirtualMachineSnapshotStatus struct {
 	// +listType=atomic
 	Conditions []Condition `json:"conditions,omitempty"`
 
+	// Deprecated: Use SourceIndications instead. This field will be removed in a future version.
 	// +optional
 	// +listType=set
 	Indications []Indication `json:"indications,omitempty"`
+
+	// +optional
+	// +listType=atomic
+	SourceIndications []SourceIndication `json:"sourceIndications,omitempty"`
 
 	// +optional
 	SnapshotVolumes *SnapshotVolumesLists `json:"snapshotVolumes,omitempty"`
@@ -347,6 +362,22 @@ const (
 	// existing PVCs for each snapshotted volumes. That means deleting the original PVC if it still
 	// exists, and restoring the volume with the same name as the original PVC.
 	VolumeRestorePolicyInPlace VolumeRestorePolicy = "InPlace"
+
+	// VolumeRestorePolicyPrefixTargetName defines a VolumeRestorePolicy which creates
+	// new PVCs with names prefixed by the target VM name: {targetVMName}-{volumeName}.
+	// This provides predictable naming while avoiding collisions when restoring to different targets.
+	VolumeRestorePolicyPrefixTargetName VolumeRestorePolicy = "PrefixTargetName"
+)
+
+// VolumeOwnershipPolicy defines what owns volumes once they're restored
+type VolumeOwnershipPolicy string
+
+const (
+	// VolumeOwnershipPolicyVm defines a VolumeOwnershipPolicyVm where restored volumes are owned by the restored VM
+	VolumeOwnershipPolicyVm VolumeOwnershipPolicy = "Vm"
+
+	// VolumeOwnershipPolicyNone defines a VolumeOwnershipPolicyVm where restored volumes are not owned by any entity
+	VolumeOwnershipPolicyNone VolumeOwnershipPolicy = "None"
 )
 
 // VirtualMachineRestoreSpec is the spec for a VirtualMachineRestore resource
@@ -357,10 +388,15 @@ type VirtualMachineRestoreSpec struct {
 	VirtualMachineSnapshotName string `json:"virtualMachineSnapshotName"`
 
 	// +optional
+	// +kubebuilder:default=WaitGracePeriod
+	// +kubebuilder:validation:Enum=StopTarget;WaitGracePeriod;FailImmediate;WaitEventually
 	TargetReadinessPolicy *TargetReadinessPolicy `json:"targetReadinessPolicy,omitempty"`
 
 	// +optional
 	VolumeRestorePolicy *VolumeRestorePolicy `json:"volumeRestorePolicy,omitempty"`
+
+	// +optional
+	VolumeOwnershipPolicy *VolumeOwnershipPolicy `json:"volumeOwnershipPolicy,omitempty"`
 
 	// VolumeRestoreOverrides gives the option to change properties of each restored volume
 	// For example, specifying the name of the restored volume, or adding labels/annotations to it
