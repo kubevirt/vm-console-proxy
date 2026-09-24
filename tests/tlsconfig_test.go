@@ -42,7 +42,7 @@ var _ = Describe("TLS config", func() {
 			})
 
 			Eventually(func(g Gomega) {
-				connState, err := getTlsConnectionState()
+				connState, err := getTlsConnectionState(&tls.Config{InsecureSkipVerify: true})
 				g.Expect(err).ToNot(HaveOccurred())
 
 				g.Expect(connState.CipherSuite).To(BeElementOf(
@@ -59,9 +59,57 @@ var _ = Describe("TLS config", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Eventually(func(g Gomega) {
-				connState, err := getTlsConnectionState()
+				connState, err := getTlsConnectionState(&tls.Config{InsecureSkipVerify: true})
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS10))
+			}, 1*time.Minute, time.Second).Should(Succeed())
+		})
+
+		It("should reload config with tls groups at runtime", func() {
+			// Configure only non-default groups, so a negotiated curve from this
+			// set proves the server honored the configuration (the default
+			// preference would pick X25519).
+			tlsProfile := &api.TlsProfile{
+				Groups: []uint16{
+					uint16(tls.CurveP256),
+					uint16(tls.CurveP384),
+				},
+			}
+
+			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
+			Expect(err).ToNot(HaveOccurred())
+
+			UpdateConfigMap(func(configMap *core.ConfigMap) {
+				configMap.Data[console.TlsProfileFile] = string(tlsProfileYaml)
+			})
+
+			Eventually(func(g Gomega) {
+				connState, err := getTlsConnectionState(&tls.Config{InsecureSkipVerify: true})
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(connState.CurveID).To(BeElementOf(tls.CurveP256, tls.CurveP384))
+			}, 1*time.Minute, time.Second).Should(Succeed())
+		})
+
+		It("should fail handshake when client and server share no TLS group", func() {
+			tlsProfile := &api.TlsProfile{
+				Groups: []uint16{
+					uint16(tls.CurveP521),
+				},
+			}
+
+			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
+			Expect(err).ToNot(HaveOccurred())
+
+			UpdateConfigMap(func(configMap *core.ConfigMap) {
+				configMap.Data[console.TlsProfileFile] = string(tlsProfileYaml)
+			})
+
+			Eventually(func(g Gomega) {
+				_, err := getTlsConnectionState(&tls.Config{
+					InsecureSkipVerify: true,
+					CurvePreferences:   []tls.CurveID{tls.X25519},
+				})
+				g.Expect(err).To(MatchError(ContainSubstring("handshake failure")))
 			}, 1*time.Minute, time.Second).Should(Succeed())
 		})
 
@@ -80,7 +128,7 @@ var _ = Describe("TLS config", func() {
 
 			// Wait until default values take effect
 			Eventually(func(g Gomega) {
-				connState, err := getTlsConnectionState()
+				connState, err := getTlsConnectionState(&tls.Config{InsecureSkipVerify: true})
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS10))
 			}, 1*time.Minute, time.Second).Should(Succeed())
@@ -114,7 +162,7 @@ var _ = Describe("TLS config", func() {
 			}, 1*time.Minute, time.Second).Should(Succeed())
 
 			Eventually(func(g Gomega) {
-				connState, err := getTlsConnectionState()
+				connState, err := getTlsConnectionState(&tls.Config{InsecureSkipVerify: true})
 				g.Expect(err).ToNot(HaveOccurred())
 
 				g.Expect(connState.CipherSuite).To(BeElementOf(
@@ -134,13 +182,13 @@ var _ = Describe("TLS config", func() {
 
 })
 
-func getTlsConnectionState() (tls.ConnectionState, error) {
+func getTlsConnectionState(tlsConfig *tls.Config) (tls.ConnectionState, error) {
 	conn, err := GetApiConnection()
 	if err != nil {
 		return tls.ConnectionState{}, err
 	}
 
-	tlsConn := tls.Client(conn, &tls.Config{InsecureSkipVerify: true})
+	tlsConn := tls.Client(conn, tlsConfig)
 	defer tlsConn.Close()
 
 	err = tlsConn.Handshake()

@@ -49,9 +49,10 @@ type watch struct {
 	certsName     string
 	keyName       string
 
-	tlsProfileError error
-	ciphers         []uint16
-	minTlsVersion   uint16
+	tlsProfileError  error
+	ciphers          []uint16
+	minTlsVersion    uint16
+	curvePreferences []tls.CurveID
 
 	certificate *tls.Certificate
 	certError   error
@@ -88,11 +89,12 @@ func (w *watch) GetConfig() (*tls.Config, error) {
 	}
 
 	return &tls.Config{
-		CipherSuites: w.ciphers,
-		MinVersion:   w.minTlsVersion,
-		Certificates: []tls.Certificate{*w.certificate},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    clientCa,
+		CipherSuites:     w.ciphers,
+		MinVersion:       w.minTlsVersion,
+		CurvePreferences: w.curvePreferences,
+		Certificates:     []tls.Certificate{*w.certificate},
+		ClientAuth:       tls.RequireAndVerifyClientCert,
+		ClientCAs:        clientCa,
 	}, nil
 }
 
@@ -101,11 +103,12 @@ func (w *watch) reloadTlsProfile() {
 	defer w.lock.Unlock()
 	w.tlsProfileError = nil
 
-	ciphers, minVersion, err := loadCipherSuitesAndMinVersion(filepath.Join(w.configDir, w.tlsProfileFileName))
+	ciphers, minVersion, curvePrefs, err := loadTlsSettings(filepath.Join(w.configDir, w.tlsProfileFileName))
 	if errors.Is(err, os.ErrNotExist) {
 		// Config file does not exist, using zero values for default
 		w.ciphers = nil
 		w.minTlsVersion = 0
+		w.curvePreferences = nil
 		return
 	}
 	if err != nil {
@@ -133,10 +136,21 @@ func (w *watch) reloadTlsProfile() {
 			}
 			log.Log.V(1).Infof("Set ciphers: %s", strings.Join(cipherNames, ", "))
 		}
+
+		if curvePrefs == nil {
+			log.Log.V(1).Infof("Groups were not set in the config file. Using default.")
+		} else {
+			groupNames := make([]string, 0, len(curvePrefs))
+			for _, curveID := range curvePrefs {
+				groupNames = append(groupNames, curveID.String())
+			}
+			log.Log.V(1).Infof("Set groups: %s", strings.Join(groupNames, ", "))
+		}
 	}
 
 	w.ciphers = ciphers
 	w.minTlsVersion = minVersion
+	w.curvePreferences = curvePrefs
 }
 
 func (w *watch) reloadCertificate() {
@@ -157,23 +171,25 @@ func (w *watch) reloadCertificate() {
 	w.certificate = certificate
 }
 
-func loadCipherSuitesAndMinVersion(configPath string) ([]uint16, uint16, error) {
+func loadTlsSettings(configPath string) ([]uint16, uint16, []tls.CurveID, error) {
 	tlsProfile, err := loadTlsProfile(configPath)
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not load tls config: %w", err)
+		return nil, 0, nil, fmt.Errorf("could not load tls config: %w", err)
 	}
 
 	ciphers, err := getCipherSuites(tlsProfile.Ciphers)
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not get cipher suite numbers: %w", err)
+		return nil, 0, nil, fmt.Errorf("could not get cipher suite numbers: %w", err)
 	}
 
 	minVersion, err := getMinTlsVersion(tlsProfile.MinTLSVersion)
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not get minimum TLS version: %w", err)
+		return nil, 0, nil, fmt.Errorf("could not get minimum TLS version: %w", err)
 	}
 
-	return ciphers, minVersion, nil
+	curveIDs := getCurveIDs(tlsProfile.Groups)
+
+	return ciphers, minVersion, curveIDs, nil
 }
 
 func loadTlsProfile(profilePath string) (*v1.TlsProfile, error) {
@@ -229,6 +245,14 @@ func getMinTlsVersion(version v1.TLSProtocolVersion) (uint16, error) {
 	default:
 		return 0, fmt.Errorf("unsupported TLS version: %s", version)
 	}
+}
+
+func getCurveIDs(tlsGroups []uint16) []tls.CurveID {
+	var result []tls.CurveID
+	for _, group := range tlsGroups {
+		result = append(result, tls.CurveID(group))
+	}
+	return result
 }
 
 func LoadCertificates(certPath, keyPath string) (*tls.Certificate, error) {
