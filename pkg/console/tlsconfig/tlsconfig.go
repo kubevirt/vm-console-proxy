@@ -49,9 +49,10 @@ type watch struct {
 	certsName     string
 	keyName       string
 
-	tlsProfileError error
-	ciphers         []uint16
-	minTlsVersion   uint16
+	tlsProfileError  error
+	ciphers          []uint16
+	minTlsVersion    uint16
+	curvePreferences []tls.CurveID
 
 	certificate *tls.Certificate
 	certError   error
@@ -88,11 +89,12 @@ func (w *watch) GetConfig() (*tls.Config, error) {
 	}
 
 	return &tls.Config{
-		CipherSuites: w.ciphers,
-		MinVersion:   w.minTlsVersion,
-		Certificates: []tls.Certificate{*w.certificate},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    clientCa,
+		CipherSuites:     w.ciphers,
+		MinVersion:       w.minTlsVersion,
+		CurvePreferences: w.curvePreferences,
+		Certificates:     []tls.Certificate{*w.certificate},
+		ClientAuth:       tls.RequireAndVerifyClientCert,
+		ClientCAs:        clientCa,
 	}, nil
 }
 
@@ -101,11 +103,12 @@ func (w *watch) reloadTlsProfile() {
 	defer w.lock.Unlock()
 	w.tlsProfileError = nil
 
-	ciphers, minVersion, err := loadCipherSuitesAndMinVersion(filepath.Join(w.configDir, w.tlsProfileFileName))
+	ciphers, minVersion, curvePrefs, err := loadTlsSettings(filepath.Join(w.configDir, w.tlsProfileFileName))
 	if errors.Is(err, os.ErrNotExist) {
 		// Config file does not exist, using zero values for default
 		w.ciphers = nil
 		w.minTlsVersion = 0
+		w.curvePreferences = nil
 		return
 	}
 	if err != nil {
@@ -133,10 +136,21 @@ func (w *watch) reloadTlsProfile() {
 			}
 			log.Log.V(1).Infof("Set ciphers: %s", strings.Join(cipherNames, ", "))
 		}
+
+		if curvePrefs == nil {
+			log.Log.V(1).Infof("Groups were not set in the config file. Using default.")
+		} else {
+			groupNames := make([]string, 0, len(curvePrefs))
+			for _, curveID := range curvePrefs {
+				groupNames = append(groupNames, curveID.String())
+			}
+			log.Log.V(1).Infof("Set groups: %s", strings.Join(groupNames, ", "))
+		}
 	}
 
 	w.ciphers = ciphers
 	w.minTlsVersion = minVersion
+	w.curvePreferences = curvePrefs
 }
 
 func (w *watch) reloadCertificate() {
@@ -157,23 +171,28 @@ func (w *watch) reloadCertificate() {
 	w.certificate = certificate
 }
 
-func loadCipherSuitesAndMinVersion(configPath string) ([]uint16, uint16, error) {
+func loadTlsSettings(configPath string) ([]uint16, uint16, []tls.CurveID, error) {
 	tlsProfile, err := loadTlsProfile(configPath)
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not load tls config: %w", err)
+		return nil, 0, nil, fmt.Errorf("could not load tls config: %w", err)
 	}
 
 	ciphers, err := getCipherSuites(tlsProfile.Ciphers)
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not get cipher suite numbers: %w", err)
+		return nil, 0, nil, fmt.Errorf("could not get cipher suite numbers: %w", err)
 	}
 
 	minVersion, err := getMinTlsVersion(tlsProfile.MinTLSVersion)
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not get minimum TLS version: %w", err)
+		return nil, 0, nil, fmt.Errorf("could not get minimum TLS version: %w", err)
 	}
 
-	return ciphers, minVersion, nil
+	curveIDs, err := getCurveIDs(tlsProfile.Groups)
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("could not get tls groups: %w", err)
+	}
+
+	return ciphers, minVersion, curveIDs, nil
 }
 
 func loadTlsProfile(profilePath string) (*v1.TlsProfile, error) {
@@ -228,6 +247,39 @@ func getMinTlsVersion(version v1.TLSProtocolVersion) (uint16, error) {
 		return tls.VersionTLS13, nil
 	default:
 		return 0, fmt.Errorf("unsupported TLS version: %s", version)
+	}
+}
+
+func getCurveIDs(tlsGroups []v1.TLSGroup) ([]tls.CurveID, error) {
+	var result []tls.CurveID
+	for _, group := range tlsGroups {
+		curveID, err := getCurveID(group)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, curveID)
+	}
+	return result, nil
+}
+
+func getCurveID(group v1.TLSGroup) (tls.CurveID, error) {
+	switch group {
+	case v1.TLSGroupX25519:
+		return tls.X25519, nil
+	case v1.TLSGroupSecP256r1:
+		return tls.CurveP256, nil
+	case v1.TLSGroupSecP384r1:
+		return tls.CurveP384, nil
+	case v1.TLSGroupSecP521r1:
+		return tls.CurveP521, nil
+	case v1.TLSGroupX25519MLKEM768:
+		return tls.X25519MLKEM768, nil
+	case v1.TLSGroupSecP256r1MLKEM768:
+		return tls.SecP256r1MLKEM768, nil
+	case v1.TLSGroupSecP384r1MLKEM1024:
+		return tls.SecP384r1MLKEM1024, nil
+	default:
+		return 0, fmt.Errorf("unknown tls group: %v", group)
 	}
 }
 
