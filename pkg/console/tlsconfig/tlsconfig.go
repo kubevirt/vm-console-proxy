@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -105,10 +106,8 @@ func (w *watch) reloadTlsProfile() {
 
 	ciphers, minVersion, curvePrefs, err := loadTlsSettings(filepath.Join(w.configDir, w.tlsProfileFileName))
 	if errors.Is(err, os.ErrNotExist) {
-		// Config file does not exist, using zero values for default
-		w.ciphers = nil
-		w.minTlsVersion = 0
-		w.curvePreferences = nil
+		log.Log.V(1).Infof("TLS config file does not exist, using default configuration")
+		w.setTlsSettings(nil, 0, nil)
 		return
 	}
 	if err != nil {
@@ -117,40 +116,50 @@ func (w *watch) reloadTlsProfile() {
 		return
 	}
 
-	log.Log.Infof("Loaded TLS configuration.")
-	{
-		// TODO: only compute human readable strings on debug level.
-		// For now, there is no easy way to test for logging level.
-		if minVersion == 0 {
-			log.Log.V(1).Infof("Min TLS version was not set in the config file. Using default.")
-		} else {
-			log.Log.V(1).Infof("Set min TLS version: %s", tls.VersionName(minVersion))
-		}
+	w.setTlsSettings(ciphers, minVersion, curvePrefs)
+}
 
-		if ciphers == nil {
-			log.Log.V(1).Infof("Ciphers were not set in the config file. Using default.")
-		} else {
-			cipherNames := make([]string, 0, len(ciphers))
-			for _, cipher := range ciphers {
-				cipherNames = append(cipherNames, tls.CipherSuiteName(cipher))
-			}
-			log.Log.V(1).Infof("Set ciphers: %s", strings.Join(cipherNames, ", "))
-		}
-
-		if curvePrefs == nil {
-			log.Log.V(1).Infof("Groups were not set in the config file. Using default.")
-		} else {
-			groupNames := make([]string, 0, len(curvePrefs))
-			for _, curveID := range curvePrefs {
-				groupNames = append(groupNames, curveID.String())
-			}
-			log.Log.V(1).Infof("Set groups: %s", strings.Join(groupNames, ", "))
-		}
+func (w *watch) setTlsSettings(ciphers []uint16, minVersion uint16, curvePrefs []tls.CurveID) {
+	if slices.Equal(w.ciphers, ciphers) &&
+		w.minTlsVersion == minVersion &&
+		slices.Equal(w.curvePreferences, curvePrefs) {
+		// Nothing has changed, so we don't need to assign values or log
+		return
 	}
 
 	w.ciphers = ciphers
 	w.minTlsVersion = minVersion
 	w.curvePreferences = curvePrefs
+
+	log.Log.Infof("Loaded TLS configuration.")
+
+	// TODO: only compute human readable strings on debug level.
+	// For now, there is no easy way to test for logging level.
+	if minVersion == 0 {
+		log.Log.V(1).Infof("Min TLS version was not set in the config file. Using default.")
+	} else {
+		log.Log.V(1).Infof("Set min TLS version: %s", tls.VersionName(minVersion))
+	}
+
+	if ciphers == nil {
+		log.Log.V(1).Infof("Ciphers were not set in the config file. Using default.")
+	} else {
+		cipherNames := make([]string, 0, len(ciphers))
+		for _, cipher := range ciphers {
+			cipherNames = append(cipherNames, tls.CipherSuiteName(cipher))
+		}
+		log.Log.V(1).Infof("Set ciphers: %s", strings.Join(cipherNames, ", "))
+	}
+
+	if curvePrefs == nil {
+		log.Log.V(1).Infof("Groups were not set in the config file. Using default.")
+	} else {
+		groupNames := make([]string, 0, len(curvePrefs))
+		for _, curveID := range curvePrefs {
+			groupNames = append(groupNames, curveID.String())
+		}
+		log.Log.V(1).Infof("Set groups: %s", strings.Join(groupNames, ", "))
+	}
 }
 
 func (w *watch) reloadCertificate() {
