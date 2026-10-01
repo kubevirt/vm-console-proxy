@@ -19,7 +19,7 @@ KUSTOMIZE_VERSION ?= v4.5.7
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 
 OPENAPI_GEN ?= $(LOCALBIN)/openapi-gen
-OPENAPI_VERSION ?= c8a335a
+OPENAPI_VERSION ?= 1504c55
 
 KUBECONFIG ?= ~/.kube/config
 
