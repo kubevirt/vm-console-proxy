@@ -43,14 +43,14 @@ var _ = Describe("TLS config", func() {
 
 			Eventually(func(g Gomega) {
 				connState, err := getTlsConnectionState()
-				Expect(err).ToNot(HaveOccurred())
+				g.Expect(err).ToNot(HaveOccurred())
 
-				Expect(connState.CipherSuite).To(BeElementOf(
+				g.Expect(connState.CipherSuite).To(BeElementOf(
 					tls.TLS_AES_128_GCM_SHA256,
 					tls.TLS_AES_256_GCM_SHA384,
 					tls.TLS_CHACHA20_POLY1305_SHA256,
 				))
-				Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS13))
+				g.Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS13))
 			}, 1*time.Minute, time.Second).Should(Succeed())
 		})
 
@@ -60,8 +60,8 @@ var _ = Describe("TLS config", func() {
 
 			Eventually(func(g Gomega) {
 				connState, err := getTlsConnectionState()
-				Expect(err).ToNot(HaveOccurred())
-				Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS10))
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS10))
 			}, 1*time.Minute, time.Second).Should(Succeed())
 		})
 
@@ -81,8 +81,8 @@ var _ = Describe("TLS config", func() {
 			// Wait until default values take effect
 			Eventually(func(g Gomega) {
 				connState, err := getTlsConnectionState()
-				Expect(err).ToNot(HaveOccurred())
-				Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS10))
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS10))
 			}, 1*time.Minute, time.Second).Should(Succeed())
 
 			// Recreate file
@@ -115,14 +115,14 @@ var _ = Describe("TLS config", func() {
 
 			Eventually(func(g Gomega) {
 				connState, err := getTlsConnectionState()
-				Expect(err).ToNot(HaveOccurred())
+				g.Expect(err).ToNot(HaveOccurred())
 
-				Expect(connState.CipherSuite).To(BeElementOf(
+				g.Expect(connState.CipherSuite).To(BeElementOf(
 					tls.TLS_AES_128_GCM_SHA256,
 					tls.TLS_AES_256_GCM_SHA384,
 					tls.TLS_CHACHA20_POLY1305_SHA256,
 				))
-				Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS13))
+				g.Expect(connState.Version).To(BeNumerically(">=", tls.VersionTLS13))
 			}, 1*time.Minute, time.Second).Should(Succeed())
 		})
 	})
