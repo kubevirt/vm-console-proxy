@@ -30,6 +30,8 @@ var _ = Describe("TlsConfig", func() {
 		testCiphersNames []string
 		testCipherIds    []uint16
 
+		testCurveIds []tls.CurveID
+
 		configDir     string
 		tlsConfigPath string
 
@@ -62,9 +64,25 @@ var _ = Describe("TlsConfig", func() {
 			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 		}
 
+		testCurveIds = []tls.CurveID{
+			tls.X25519,
+			tls.CurveP256,
+			tls.CurveP384,
+			tls.CurveP521,
+			tls.X25519MLKEM768,
+			tls.SecP256r1MLKEM768,
+			tls.SecP384r1MLKEM1024,
+		}
+
+		groupCodes := make([]uint16, len(testCurveIds))
+		for i, curveID := range testCurveIds {
+			groupCodes[i] = uint16(curveID)
+		}
+
 		tlsProfile := &v1.TlsProfile{
 			Ciphers:       testCiphersNames,
 			MinTLSVersion: v1.VersionTLS12,
+			Groups:        groupCodes,
 		}
 		tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 		Expect(err).ToNot(HaveOccurred())
@@ -123,6 +141,7 @@ var _ = Describe("TlsConfig", func() {
 
 		Expect(config.CipherSuites).To(ConsistOf(testCipherIds))
 		Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
+		Expect(config.CurvePreferences).To(Equal(testCurveIds))
 	})
 
 	It("should use default ciphers, if ciphers are not sepcified", func() {
@@ -160,6 +179,25 @@ var _ = Describe("TlsConfig", func() {
 		Expect(config.MinVersion).To(BeZero())
 	})
 
+	It("should use default curve preferences, if groups are not specified", func() {
+		tlsConfig := &v1.TlsProfile{
+			Ciphers:       testCiphersNames,
+			MinTLSVersion: v1.VersionTLS12,
+		}
+		tlsConfigYaml, err := yaml.Marshal(tlsConfig)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(tlsConfigPath, tlsConfigYaml, 0666)).To(Succeed())
+
+		configWatch.Reload()
+
+		config, err := configWatch.GetConfig()
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(config.CipherSuites).To(ConsistOf(testCipherIds))
+		Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
+		Expect(config.CurvePreferences).To(BeEmpty())
+	})
+
 	It("should use default config if file does not exist", func() {
 		Expect(os.Remove(tlsConfigPath)).ToNot(HaveOccurred())
 		configWatch.Reload()
@@ -170,6 +208,7 @@ var _ = Describe("TlsConfig", func() {
 		// Testing for nil specifically, because nil means default configuration.
 		Expect(config.CipherSuites).To(BeNil())
 		Expect(config.MinVersion).To(BeZero())
+		Expect(config.CurvePreferences).To(BeEmpty())
 	})
 
 	It("should load certificate from file", func() {
@@ -205,6 +244,7 @@ var _ = Describe("TlsConfig", func() {
 					"TLS_CHACHA20_POLY1305_SHA256",
 				},
 				MinTLSVersion: v1.VersionTLS13,
+				Groups:        []uint16{uint16(tls.CurveP384)},
 			}
 			tlsProfileYaml, err := yaml.Marshal(tlsProfile)
 			Expect(err).ToNot(HaveOccurred())
@@ -217,6 +257,7 @@ var _ = Describe("TlsConfig", func() {
 
 			Expect(config.CipherSuites).ToNot(Equal(originalConfig.CipherSuites))
 			Expect(config.MinVersion).ToNot(Equal(originalConfig.MinVersion))
+			Expect(config.CurvePreferences).ToNot(Equal(originalConfig.CurvePreferences))
 
 			Expect(config.CipherSuites).To(ConsistOf(
 				tls.TLS_AES_128_GCM_SHA256,
@@ -224,6 +265,7 @@ var _ = Describe("TlsConfig", func() {
 				tls.TLS_CHACHA20_POLY1305_SHA256,
 			))
 			Expect(config.MinVersion).To(Equal(uint16(tls.VersionTLS13)))
+			Expect(config.CurvePreferences).To(ConsistOf(tls.CurveP384))
 		})
 
 		It("should fail if config is invalid", func() {
@@ -269,6 +311,7 @@ var _ = Describe("TlsConfig", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(config.CipherSuites).To(BeEmpty())
 			Expect(config.MinVersion).To(BeZero())
+			Expect(config.CurvePreferences).To(BeEmpty())
 		})
 	})
 
