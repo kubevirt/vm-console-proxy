@@ -42,6 +42,7 @@ spec:
             capabilities:
               drop:
                 - "ALL"
+            readOnlyRootFilesystem: true
           livenessProbe:
             httpGet:
               path: /readyz
