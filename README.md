@@ -39,3 +39,23 @@ kubectl create rolebinding "${ROLE_BINDING_NAME}" --clusterrole="token.kubevirt.
 
 ## Development
 To develop locally, set the environment variables `IMG_REPOSITORY` and `IMG_TAG` (or the variable `IMG`) to your development repository. Then run `make build-container push-container` to build the current code and push it into your development repository. Finally, run `make deploy` to install the development version.
+
+## Dependency updates
+
+Dependabot keeps its scheduled Go module and GitHub Actions version updates on
+`main`. Renovate runs daily at 06:00 UTC and can also be started from the
+Actions tab. It proposes vulnerability fixes on `main` and `release-vX.Y`
+branches, but does not open routine version update PRs. Renovate uses
+Dependabot alerts and OSV advisories; OSV alerts cover direct dependencies.
+
+The Renovate workflow requires a GitHub App installed on this repository with
+`contents:write`, `pull-requests:write`, `issues:write`, `workflows:write`, and
+`dependabot-alerts:read` permissions. Configure its App ID and private key as
+the `RENOVATE_APP_ID` and `RENOVATE_APP_PRIVATE_KEY` Actions secrets. Keep this
+workflow as the only Renovate scheduler to avoid duplicate PRs.
+
+Renovate runs `go mod tidy` for Go module updates and refreshes the tracked
+root and API vendor trees for supported updates. Major Go module upgrades may
+need manual vendoring. Review generated API code when a security fix changes
+its inputs. The Go version report workflow comments when a Renovate PR changes
+`go` or `toolchain` directives in `go.mod` or `go.work` files.

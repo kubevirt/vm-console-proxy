@@ -1,30 +1,25 @@
 {
-   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-   "extends": [
-      ":gitSignOff",
-      ":dependencyDashboard"
-   ],
-   "baseBranches": ["main", "/^release-v([0-9]+\\.([0-9]+))$/"],
-   "prConcurrentLimit": 3,
-   "lockFileMaintenance": {
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "baseBranchPatterns": ["main", "/^release-v([0-9]+\\.([0-9]+))$/"],
+  "prConcurrentLimit": 3,
+  "lockFileMaintenance": {
+    "enabled": false
+  },
+  "postUpdateOptions": ["gomodTidy"],
+  "labels": ["release-note-none"],
+  "extends": [":gitSignOff", ":dependencyDashboard"],
+  "packageRules": [
+    {
+      "groupName": "all dependencies",
+      "groupSlug": "all",
+      "matchPackageNames": ["*"],
       "enabled": false
-   },
-   "postUpdateOptions": ["gomodTidy"],
-   "labels": ["release-note-none"],
-   "packageRules": [
-      {
-         "groupName": "all dependencies",
-         "groupSlug": "all",
-         "enabled": false,
-         "matchPackagePatterns": [
-         "*"
-         ]
-      }
-   ],
-   "vulnerabilityAlerts": {
-      "enabled": true
-   },
-   "osvVulnerabilityAlerts": true,
-   "assigneesFromCodeOwners": true,
-   "separateMajorMinor": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "osvVulnerabilityAlerts": true,
+  "assigneesFromCodeOwners": true,
+  "separateMajorMinor": true
 }
