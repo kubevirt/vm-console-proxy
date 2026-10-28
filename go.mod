@@ -1,6 +1,6 @@
 module github.com/kubevirt/vm-console-proxy
 
-go 1.22.4
+go 1.25.0
 
 require (
 	github.com/emicklei/go-restful/v3 v3.12.1
@@ -59,7 +59,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
