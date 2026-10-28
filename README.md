@@ -3,7 +3,20 @@
 This project adds a new API extension to Kubernetes, 
 that can be used to generate time limited tokens to access VNC.
 
-**Note:** This project no longer provides VNC proxy functionality, so the project name should be changed in the future.
+**Note:** Despite its name, this project does not proxy the VNC traffic itself.
+
+## When to use it
+
+Accessing the VNC console of a VM through the Kubernetes API requires credentials that are allowed to `get`
+the `virtualmachineinstances/vnc` subresource. When a user wants to give VNC access to another client, for example
+the browser-based VNC client of a web console or a self-service portal, the client would need the user's own
+Kubernetes credentials, and with them everything the user is allowed to do in the cluster.
+
+With this project, the user can request a token for VNC access to the VM instead, and give only the token to the
+client. The token only allows VNC access to that VM.
+
+If you only need to access the console of a VM yourself, use `virtctl vnc`
+(or `virtctl vnc --proxy-only` to connect with your own VNC viewer) instead.
 
 ## Demo
 [![asciicast](https://asciinema.org/a/oqA9yNAteTcUxU3vyWTDWG7dh.svg)](https://asciinema.org/a/oqA9yNAteTcUxU3vyWTDWG7dh)
@@ -45,6 +58,9 @@ kubectl create rolebinding "${ROLE_BINDING_NAME}" --clusterrole="token.kubevirt.
 # Bind ClusterRole to a ServiceAccount
 kubectl create rolebinding "${ROLE_BINDING_NAME}" --clusterrole="token.kubevirt.io:generate" --serviceaccount="${SERVICE_ACCOUNT_NAME}"
 ```
+
+To generate a token for a VM, the caller also needs permission to `get` the `virtualmachineinstances/vnc`
+subresource of that VM.
 
 ## Development
 To develop locally, set the environment variables `IMG_REPOSITORY` and `IMG_TAG` (or the variable `IMG`) to your development repository. Then run `make build-container push-container` to build the current code and push it into your development repository. Finally, run `make deploy` to install the development version.
