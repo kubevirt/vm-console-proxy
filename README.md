@@ -3,7 +3,34 @@
 This project adds a new API extension to Kubernetes, 
 that can be used to generate time limited tokens to access VNC.
 
-**Note:** This project no longer provides VNC proxy functionality, so the project name should be changed in the future.
+**Note:** Despite its name, this project does not proxy the VNC traffic itself. It provides the token part of a
+VNC proxy solution: clients use the generated tokens to connect to the `/vnc` subresource of a KubeVirt
+`VirtualMachineInstance` through the Kubernetes API.
+
+## Why is it needed?
+
+Accessing the VNC console of a VM through the Kubernetes API requires credentials that are allowed to `get`
+the `virtualmachineinstances/vnc` subresource. For one-off access by an administrator or a VM owner, their own
+credentials are enough, for example with `virtctl vnc`.
+
+It becomes a problem when a user wants to hand VNC access over to another client, for example the browser based
+VNC client of a web console or a self-service portal. The client would need the user's own Kubernetes credentials,
+and with them everything the user is allowed to do in the cluster.
+
+With this project, the user can request a token for VNC access to the VM instead. Besides `get` on
+`virtualmachineinstances/vnc` for that VM, this needs a separate permission to call the token API: `get` on
+`virtualmachines/vnc` in the `token.kubevirt.io` API group (see [API Access Permissions](#api-access-permissions)).
+The token belongs to a ServiceAccount that is only granted VNC access to that VM. The requested duration defaults to
+10 minutes, but Kubernetes can issue the token with a shorter lifetime, so clients should rely on the
+`expirationTimestamp` returned with the token.
+
+## When to use it
+
+Use this project when VNC access to a VM should be given to another client, without sharing your own credentials
+with it.
+
+If you only need to access the console of a VM yourself, use `virtctl vnc`
+(or `virtctl vnc --proxy-only` to connect with your own VNC viewer) instead.
 
 ## Demo
 [![asciicast](https://asciinema.org/a/oqA9yNAteTcUxU3vyWTDWG7dh.svg)](https://asciinema.org/a/oqA9yNAteTcUxU3vyWTDWG7dh)
