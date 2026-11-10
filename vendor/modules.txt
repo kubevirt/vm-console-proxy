@@ -85,7 +85,7 @@ github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1
 # github.com/mitchellh/go-vnc v0.0.0-20150629162542-723ed9867aed
 ## explicit
 github.com/mitchellh/go-vnc
-# github.com/moby/spdystream v0.2.0
+# github.com/moby/spdystream v0.5.1
 ## explicit; go 1.13
 github.com/moby/spdystream
 github.com/moby/spdystream/spdy
