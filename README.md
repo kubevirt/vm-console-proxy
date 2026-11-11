@@ -20,6 +20,15 @@ To deploy the latest version, use the following command:
 kubectl apply -f "https://github.com/kubevirt/vm-console-proxy/releases/latest/download/vm-console-proxy.yaml"
 ```
 
+### Verify installation
+
+```bash
+kubectl get deployments -A --field-selector metadata.name=vm-console-proxy
+kubectl get apiservice v1.token.kubevirt.io
+```
+
+The release manifest installs the deployment in `kubevirt`. The SSP operator installs it in the SSP namespace. The APIService name is `v1.token.kubevirt.io` either way, and it should report `Available=True`.
+
 ## API
 See the [API documentation](docs/api.md).
 
