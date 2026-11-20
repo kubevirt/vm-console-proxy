@@ -13,7 +13,7 @@ metadata:
 EOF
 
 # Deploying kuebvirt
-oc apply -n $NAMESPACE -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
+oc create -n $NAMESPACE -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
 
 # Using KubeVirt CR from version v0.59.0
 oc apply -n $NAMESPACE -f - <<EOF
